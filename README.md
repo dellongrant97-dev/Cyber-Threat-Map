@@ -27,4 +27,4 @@ Create a production build with `npm run build`.
 
 ## Deploy to GitHub Pages
 
-The `Deploy GitHub Pages` workflow builds and deploys the site whenever changes are pushed to `main`. In the repository's **Settings → Pages**, select **GitHub Actions** as the build and deployment source. After the workflow succeeds, the site is available at <https://dellongrant97-dev.github.io/Cyber-Threat-Map/>.
+The `Deploy GitHub Pages` workflow builds and deploys the site whenever changes are pushed to `main`. In the repository's **Settings → Pages**, select **GitHub Actions** as the build and deployment source. After the workflow succeeds, the site is available athttps://dellongrant97-dev.github.io/Cyber-Threat-Map/?refresh=202610091833
