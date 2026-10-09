@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import landShapes from './landShapes.js'
 
 const incidents = [
   { id: 'INC-28491', title: 'Credential stuffing', origin: 'Moscow, RU', target: 'Frankfurt, DE', time: 'Just now', severity: 'critical', type: 'Identity', initials: 'RU', color: 'red' },
@@ -9,24 +10,13 @@ const incidents = [
 ]
 
 const threatPoints = [
-  { x: 214, y: 169, severity: 'high', label: 'North America' },
-  { x: 309, y: 333, severity: 'medium', label: 'South America' },
-  { x: 508, y: 153, severity: 'critical', label: 'Europe' },
-  { x: 604, y: 188, severity: 'high', label: 'Middle East' },
-  { x: 726, y: 190, severity: 'critical', label: 'East Asia' },
-  { x: 774, y: 297, severity: 'medium', label: 'Southeast Asia' },
-  { x: 536, y: 353, severity: 'low', label: 'Southern Africa' },
-]
-
-const landShapes = [
-  'M75 91l28-17 45 4 24 16 30 3 19 19-7 19-25 7-12 18-17 4-3 22-17 12-11 34-17 13-18-7-7-17-18-13-2-29-18-20-14-27-1-23 16-18 8-22z',
-  'M208 229l18 4 10 20 20 9 10 22-7 25-14 11-7 33-17 31-12 5-7-20-13-22 2-25-11-25 6-24-5-23 15-21z',
-  'M420 101l19-18 36-8 23 10 8 18-14 12-24-3-15 13-23-5-10-19z',
-  'M456 141l22-10 30 5 15 15 14 5 9 25 13 12-7 19-16 11-5 28-16 17-9 28-17 11-8-20-13-12 1-25-13-14-2-23-13-14 6-19-10-18z',
-  'M529 89l31-15 48 2 24 11 31-3 21 12 35-4 36 12 22-2 37 20 35 6 31 17 19 25-9 15-26-6-14 14-27-8-11 16-22-5-17 20-21-4-14 22-20-7-15-19-24 7-12-14-25 4-7-18-28 3-18-15-33-2-10-20-27 3-12-16-29-2-20-18-26 1-15-15 12-21z',
-  'M639 204l14 9 7 23 17 14 1 22 15 17-4 35-11 19-15-6-8-25-14-18-5-27-16-20 3-22 16-21z',
-  'M856 310l29-5 15 10 4 17-17 14-22-4-13-14 4-18z',
-  'M364 329l17-7 20 7 7 15-14 9-22-4-8-11z',
+  { x: 230, y: 143, severity: 'high', label: 'North America' },
+  { x: 370, y: 315, severity: 'medium', label: 'South America' },
+  { x: 530, y: 111, severity: 'critical', label: 'Europe' },
+  { x: 600, y: 165, severity: 'high', label: 'Middle East' },
+  { x: 815, y: 139, severity: 'critical', label: 'East Asia' },
+  { x: 790, y: 246, severity: 'medium', label: 'Southeast Asia' },
+  { x: 525, y: 322, severity: 'low', label: 'Southern Africa' },
 ]
 
 const tabs = [
@@ -58,13 +48,13 @@ function WorldMap({ filter }) {
   return (
     <svg className="world-map" viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
       <title id="map-title">Global cyber threat activity map</title>
-      <desc id="map-desc">A 2D world map showing attack routes and threat activity hotspots across seven regions.</desc>
+      <desc id="map-desc">A dotted 2D world map showing attack routes and threat activity hotspots across seven regions.</desc>
       <defs>
         <pattern id="map-dots" width="8" height="8" patternUnits="userSpaceOnUse">
-          <circle cx="1" cy="1" r="1" fill="#273439" />
+          <circle cx="1" cy="1" r=".8" fill="#16452f" />
         </pattern>
-        <pattern id="land-dots" width="5" height="5" patternUnits="userSpaceOnUse">
-          <circle cx="1.1" cy="1.1" r="1.15" fill="#405257" />
+        <pattern id="land-dots" width="4.5" height="4.5" patternUnits="userSpaceOnUse">
+          <circle cx="1.2" cy="1.2" r="1.05" fill="#00e887" />
         </pattern>
         <filter id="route-glow" x="-40%" y="-40%" width="180%" height="180%">
           <feGaussianBlur stdDeviation="3" result="blur" />
@@ -81,17 +71,19 @@ function WorldMap({ filter }) {
         {landShapes.map((shape, index) => <path d={shape} key={index} />)}
       </g>
       <g className="routes" filter="url(#route-glow)">
-        <path className="route route-red" d="M505 150 Q402 54 214 169" />
-        <path className="route route-cyan" d="M727 188 Q652 81 508 151" />
-        <path className="route route-orange" d="M773 297 Q716 116 508 151" />
-        <path className="route route-green" d="M310 333 Q350 202 508 151" />
-        <path className="route route-blue" d="M604 188 Q690 260 773 297" />
-        <path className="route route-red route-dash" d="M214 169 Q417 252 604 188" />
+        <path className="route route-red" d="M530 111 Q400 45 230 143" />
+        <path className="route route-cyan" d="M815 139 Q700 39 530 111" />
+        <path className="route route-orange" d="M790 246 Q710 101 530 111" />
+        <path className="route route-green" d="M370 315 Q371 184 530 111" />
+        <path className="route route-blue" d="M600 165 Q700 211 790 246" />
+        <path className="route route-red route-dash" d="M230 143 Q424 233 600 165" />
       </g>
       <g className="map-points">
         {visiblePoints.map((point) => (
           <g className={`map-point point-${point.severity}`} key={point.label} transform={`translate(${point.x} ${point.y})`}>
             <circle className="point-pulse" r="15" />
+            <circle className="point-radar" r="12" />
+            <circle className="point-radar point-radar-outer" r="22" />
             <circle className="point-halo" r="7" />
             <circle className="point-core" r="3.5" />
             <title>{point.label}: {point.severity} activity</title>
