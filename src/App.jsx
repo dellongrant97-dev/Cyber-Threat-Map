@@ -168,8 +168,9 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
               }
             }}
           >
-            <circle className="news-point-area" r={article.location.precision === 'city' ? 14 : 22} />
+            <circle className="news-point-area" r={selectedNewsId === article.id ? 38 : article.location.precision === 'city' ? 20 : 32} />
             <circle className="news-point-core" r="4" />
+            <text className="news-point-label" x="8" y="-8">{article.location.name}</text>
             <title>{article.location.name} · approx. {article.location.precision} match · {article.title} · BBC News</title>
           </g>
         ))}
@@ -379,6 +380,13 @@ function App() {
     document.getElementById(`indicator-${ip}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 
+  const selectNews = (article) => {
+    setSelectedNewsId(selectedNewsId === article.id ? null : article.id)
+    if (!article.location) return
+    setShowNews(true)
+    document.getElementById('threat-map')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -473,11 +481,22 @@ function App() {
               <span className="map-filter-spacer" />
               <span className="map-updated">{newsUpdatedAt ? `News checked ${formatNewsTime(newsUpdatedAt)}` : newsLoading ? 'Loading world news…' : 'World news unavailable'}</span>
             </div>
+            <div className="news-headline-strip" aria-label="Latest mapped world news">
+              <div className="news-strip-heading"><span><i className="news-legend-dot" />WORLD NEWS</span><a href="#news-panel">All headlines ↓</a></div>
+              {newsArticles.filter((article) => article.location).slice(0, 3).map((article) => (
+                <button className={`news-headline-card ${selectedNewsId === article.id ? 'news-headline-selected' : ''}`} key={article.id} onClick={() => selectNews(article)} aria-pressed={selectedNewsId === article.id}>
+                  <span className="news-headline-place">{article.location.name}</span>
+                  <strong>{article.title}</strong>
+                  <span className="news-headline-time">{formatNewsTime(article.publishedAt)} UTC · BBC</span>
+                </button>
+              ))}
+              {!newsArticles.some((article) => article.location) && <span className="news-strip-empty">{newsLoading ? 'Loading mapped headlines…' : 'No headlines with confidently matched locations are available.'}</span>}
+            </div>
             <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
             <div className="map-footer"><div className="legend"><span className="legend-title">MAP KEY</span><span><i className="confidence-dot high" /> 6+ source lists</span><span><i className="confidence-dot medium" /> 3-5 source lists</span><span><i className="event-legend-dot" /> USGS earthquake</span><span><i className="news-legend-dot" /> BBC news area</span></div><span className="map-disclaimer">News areas are approximate headline place matches.</span></div>
           </section>
 
-          <section className="events-panel news-panel" aria-labelledby="news-title">
+          <section className="events-panel news-panel" id="news-panel" aria-labelledby="news-title">
             <div className="panel-heading events-heading">
               <div><h2 id="news-title">Major world news</h2><p>BBC World headlines · highlighted only when a location is identified in the story text</p></div>
               <div className="events-heading-actions">
@@ -490,7 +509,7 @@ function App() {
             <div className="news-list">
               {newsArticles.length ? newsArticles.slice(0, 8).map((article) => (
                 <article className={`news-story ${selectedNewsId === article.id ? 'news-story-selected' : ''}`} key={article.id}>
-                  <button className="news-story-select" onClick={() => { setSelectedNewsId(selectedNewsId === article.id ? null : article.id); if (article.location) setShowNews(true) }} aria-pressed={selectedNewsId === article.id}>
+                  <button className="news-story-select" onClick={() => selectNews(article)} aria-pressed={selectedNewsId === article.id}>
                     <span className="news-story-content">
                       <strong>{article.title}</strong>
                       <span>{article.summary || 'Open the publisher article for more details.'}</span>
