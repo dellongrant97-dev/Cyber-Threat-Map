@@ -483,14 +483,33 @@ function App() {
             </div>
             <div className="news-headline-strip" aria-label="Latest mapped world news">
               <div className="news-strip-heading"><span><i className="news-legend-dot" />WORLD NEWS</span><a href="#news-panel">All headlines ↓</a></div>
-              {newsArticles.filter((article) => article.location).slice(0, 3).map((article) => (
-                <button className={`news-headline-card ${selectedNewsId === article.id ? 'news-headline-selected' : ''}`} key={article.id} onClick={() => selectNews(article)} aria-pressed={selectedNewsId === article.id}>
-                  <span className="news-headline-place">{article.location.name}</span>
-                  <strong>{article.title}</strong>
-                  <span className="news-headline-time">{formatNewsTime(article.publishedAt)} UTC · BBC</span>
-                </button>
-              ))}
-              {!newsArticles.some((article) => article.location) && <span className="news-strip-empty">{newsLoading ? 'Loading mapped headlines…' : 'No headlines with confidently matched locations are available.'}</span>}
+              {newsArticles.some((article) => article.location) ? (() => {
+                const mappedHeadlines = newsArticles.filter((article) => article.location).slice(0, 3);
+                return (
+                  <div className="news-headline-viewport">
+                    <div className="news-headline-track">
+                      <div className="news-headline-group">
+                        {mappedHeadlines.map((article) => (
+                          <button className={`news-headline-card ${selectedNewsId === article.id ? 'news-headline-selected' : ''}`} key={article.id} onClick={() => selectNews(article)} aria-pressed={selectedNewsId === article.id}>
+                            <span className="news-headline-place">{article.location.name}</span>
+                            <strong>{article.title}</strong>
+                            <span className="news-headline-time">{formatNewsTime(article.publishedAt)} UTC · BBC</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="news-headline-group news-headline-copy" aria-hidden="true">
+                        {mappedHeadlines.map((article) => (
+                          <div className="news-headline-card" key={article.id}>
+                            <span className="news-headline-place">{article.location.name}</span>
+                            <strong>{article.title}</strong>
+                            <span className="news-headline-time">{formatNewsTime(article.publishedAt)} UTC · BBC</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })() : <span className="news-strip-empty">{newsLoading ? 'Loading mapped headlines…' : 'No headlines with confidently matched locations are available.'}</span>}
             </div>
             <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
             <div className="map-footer"><div className="legend"><span className="legend-title">MAP KEY</span><span><i className="confidence-dot high" /> 6+ source lists</span><span><i className="confidence-dot medium" /> 3-5 source lists</span><span><i className="event-legend-dot" /> USGS earthquake</span><span><i className="news-legend-dot" /> BBC news area</span></div><span className="map-disclaimer">News areas are approximate headline place matches.</span></div>
