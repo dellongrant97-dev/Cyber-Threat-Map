@@ -53,8 +53,8 @@ function WorldMap({ filter }) {
         <pattern id="map-dots" width="8" height="8" patternUnits="userSpaceOnUse">
           <circle cx="1" cy="1" r=".8" fill="#16452f" />
         </pattern>
-        <pattern id="land-dots" width="4.5" height="4.5" patternUnits="userSpaceOnUse">
-          <circle cx="1.2" cy="1.2" r="1.05" fill="#00e887" />
+        <pattern id="land-dots" width="3.6" height="3.6" patternUnits="userSpaceOnUse">
+          <circle cx="1.2" cy="1.2" r="1.05" fill="#00f28c" />
         </pattern>
         <filter id="route-glow" x="-40%" y="-40%" width="180%" height="180%">
           <feGaussianBlur stdDeviation="3" result="blur" />
@@ -68,7 +68,7 @@ function WorldMap({ filter }) {
         <ellipse cx="500" cy="250" rx="470" ry="210" />
       </g>
       <g className="continents">
-        {landShapes.map((shape, index) => <path d={shape} key={index} />)}
+        <path d={landShapes} />
       </g>
       <g className="routes" filter="url(#route-glow)">
         <path className="route route-red" d="M530 111 Q400 45 230 143" />

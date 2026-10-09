@@ -147,7 +147,7 @@ h1 > span { color: var(--green); }
 .map-stage { position: relative; height: clamp(270px, 31vw, 400px); overflow: hidden; background: radial-gradient(ellipse at 49% 44%, #071812 0%, #07110e 46%, #080f0d 80%); }
 .world-map { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 .graticules path, .graticules ellipse { fill: none; stroke: #17452f; stroke-width: .65; opacity: .48; }
-.continents path { fill: url(#land-dots); stroke: none; opacity: .88; }
+.continents path { fill: url(#land-dots); stroke: none; opacity: .96; filter: drop-shadow(0 0 1.5px #00f28c5c); }
 .routes path { fill: none; stroke-width: 1.1; stroke-dasharray: 3 5; opacity: .82; }
 .route-red { stroke: #ff6272; }
 .route-cyan { stroke: #57d9d1; }
