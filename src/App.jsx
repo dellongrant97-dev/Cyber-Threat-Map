@@ -1,30 +1,42 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import landShapes from './landShapes.js'
-
-const incidents = [
-  { id: 'INC-28491', title: 'Credential stuffing', origin: 'Moscow, RU', target: 'Frankfurt, DE', time: 'Just now', severity: 'critical', type: 'Identity', initials: 'RU', color: 'red' },
-  { id: 'INC-28490', title: 'C2 beacon detected', origin: 'Shenzhen, CN', target: 'Singapore, SG', time: '2 min ago', severity: 'high', type: 'Malware', initials: 'CN', color: 'orange' },
-  { id: 'INC-28489', title: 'DDoS mitigation', origin: 'São Paulo, BR', target: 'Ashburn, US', time: '5 min ago', severity: 'medium', type: 'Network', initials: 'BR', color: 'yellow' },
-  { id: 'INC-28488', title: 'Suspicious login', origin: 'Lagos, NG', target: 'London, UK', time: '8 min ago', severity: 'high', type: 'Identity', initials: 'NG', color: 'orange' },
-  { id: 'INC-28487', title: 'Phishing campaign', origin: 'Jakarta, ID', target: 'Tokyo, JP', time: '12 min ago', severity: 'low', type: 'Email', initials: 'ID', color: 'green' },
-]
-
-const threatPoints = [
-  { x: 230, y: 143, severity: 'high', label: 'North America' },
-  { x: 370, y: 315, severity: 'medium', label: 'South America' },
-  { x: 530, y: 111, severity: 'critical', label: 'Europe' },
-  { x: 600, y: 165, severity: 'high', label: 'Middle East' },
-  { x: 815, y: 139, severity: 'critical', label: 'East Asia' },
-  { x: 790, y: 246, severity: 'medium', label: 'Southeast Asia' },
-  { x: 525, y: 322, severity: 'low', label: 'Southern Africa' },
-]
+import {
+  loadCachedThreatFeed,
+  loadThreatFeed,
+  resolveIndicatorLocations,
+  threatFeedInfo,
+} from './threatIntel.js'
+import { globalEventsInfo, loadGlobalEvents } from './globalEvents.js'
+import { globalNewsInfo, loadGlobalNews } from './globalNews.js'
 
 const tabs = [
-  { label: 'Overview', icon: 'grid' },
-  { label: 'Threat map', icon: 'radar' },
-  { label: 'Incidents', icon: 'alert', count: '18' },
-  { label: 'Intelligence', icon: 'pulse' },
+  { label: 'Overview', icon: 'grid', target: 'overview' },
+  { label: 'Threat map', icon: 'radar', target: 'threat-map' },
+  { label: 'Indicators', icon: 'alert', target: 'indicator-panel' },
+  { label: 'Intelligence', icon: 'pulse', target: 'source-panel' },
 ]
+
+const consensusFilters = [
+  { id: 'all', label: 'All indicators' },
+  { id: 'high', label: '6+ sources' },
+  { id: 'medium', label: '3-5 sources' },
+]
+
+function formatEventTime(value) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(value))
+}
+
+function formatNewsTime(value) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(value))
+}
 
 function Icon({ name, size = 18 }) {
   const paths = {
@@ -32,23 +44,50 @@ function Icon({ name, size = 18 }) {
     radar: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><path d="m12 12 7-7M12 3v9h9" /></>,
     alert: <><path d="M10.3 3.9 2.5 17.4A1.8 1.8 0 0 0 4.1 20h15.8a1.8 1.8 0 0 0 1.6-2.6L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4m0 3h.01" /></>,
     pulse: <><path d="M3 12h4l3-8 4 16 3-8h4" /></>,
-    settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.8-.6a8 8 0 0 1-1.7 1l-.3 1.9h-2.8l-.3-1.9a8 8 0 0 1-1.7-1l-1.8.6-1.4-2.4 1.5-1.2a7 7 0 0 1 0-2l-1.5-1.2 1.4-2.4 1.8.6a8 8 0 0 1 1.7-1l.3-1.9h2.8l.3 1.9a8 8 0 0 1 1.7 1l1.8-.6 1.4 2.4-1.5 1.2a7 7 0 0 1 0 2Z" transform="translate(-1 -1)" /></>,
+    settings: <><path d="M4 5h16M4 12h16M4 19h16" /><circle cx="9" cy="5" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="11" cy="19" r="2" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4.5 4.5" /></>,
     bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4" /></>,
     chevron: <path d="m9 18 6-6-6-6" />,
     arrow: <><path d="M7 17 17 7M7 7h10v10" /></>,
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    download: <><path d="M12 3v12m-5-5 5 5 5-5M5 18v3h14v-3" /></>,
   }
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
 
-function WorldMap({ filter }) {
-  const visiblePoints = threatPoints.filter((point) => filter === 'All activity' || point.severity === filter.toLowerCase())
+function formatNumber(value) {
+  return new Intl.NumberFormat().format(value)
+}
+
+function formatDate(value) {
+  if (!value) return 'Waiting for source'
+  return `${new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(value))} UTC`
+}
+
+function projectLocation(location) {
+  return {
+    x: ((location.longitude + 180) / 360) * 1000,
+    y: ((90 - location.latitude) / 180) * 500,
+  }
+}
+
+function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }) {
+  const visiblePoints = indicators
+    .map((point) => ({ ...point, ...projectLocation(point) }))
+  const visibleEvents = showEvents ? events.map((event) => ({ ...event, ...projectLocation(event) })) : []
+  const visibleNews = showNews ? news.filter((article) => article.location).map((article) => ({
+    ...article,
+    ...projectLocation(article.location),
+  })) : []
 
   return (
     <svg className="world-map" viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
-      <title id="map-title">Global cyber threat activity map</title>
-      <desc id="map-desc">A dotted 2D world map showing attack routes and threat activity hotspots across seven regions.</desc>
+      <title id="map-title">Public threat intelligence and global events</title>
+      <desc id="map-desc">A dotted 2D world map with approximate hosting locations for suspicious IP indicators and, when enabled, independently sourced USGS earthquake events of magnitude 4.5 or greater.</desc>
       <defs>
         <pattern id="map-dots" width="8" height="8" patternUnits="userSpaceOnUse">
           <circle cx="1" cy="1" r=".8" fill="#16452f" />
@@ -56,10 +95,6 @@ function WorldMap({ filter }) {
         <pattern id="land-dots" width="3.6" height="3.6" patternUnits="userSpaceOnUse">
           <circle cx="1.2" cy="1.2" r="1.05" fill="#00f28c" />
         </pattern>
-        <filter id="route-glow" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="3" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
       </defs>
       <rect width="1000" height="500" fill="url(#map-dots)" opacity=".42" />
       <g className="graticules">
@@ -67,53 +102,282 @@ function WorldMap({ filter }) {
         <path d="M250 0v500M500 0v500M750 0v500" />
         <ellipse cx="500" cy="250" rx="470" ry="210" />
       </g>
-      <g className="continents">
-        <path d={landShapes} />
-      </g>
-      <g className="routes" filter="url(#route-glow)">
-        <path className="route route-red" d="M530 111 Q400 45 230 143" />
-        <path className="route route-cyan" d="M815 139 Q700 39 530 111" />
-        <path className="route route-orange" d="M790 246 Q710 101 530 111" />
-        <path className="route route-green" d="M370 315 Q371 184 530 111" />
-        <path className="route route-blue" d="M600 165 Q700 211 790 246" />
-        <path className="route route-red route-dash" d="M230 143 Q424 233 600 165" />
-      </g>
+      <g className="continents"><path d={landShapes} /></g>
       <g className="map-points">
         {visiblePoints.map((point) => (
-          <g className={`map-point point-${point.severity}`} key={point.label} transform={`translate(${point.x} ${point.y})`}>
-            <circle className="point-pulse" r="15" />
+          <g
+            className={`map-point point-${point.consensus >= 6 ? 'high' : 'medium'} ${selectedIp === point.ip ? 'point-selected' : ''}`}
+            key={point.ip}
+            transform={`translate(${point.x} ${point.y})`}
+            role="button"
+            tabIndex="0"
+            aria-label={`${point.ip}, listed on ${point.consensus} or more source lists, approximate IP geolocation ${point.city ? `${point.city}, ` : ''}${point.country}`}
+            onClick={() => onSelect(point.ip)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onSelect(point.ip)
+              }
+            }}
+          >
             <circle className="point-radar" r="12" />
             <circle className="point-radar point-radar-outer" r="22" />
             <circle className="point-halo" r="7" />
             <circle className="point-core" r="3.5" />
-            <title>{point.label}: {point.severity} activity</title>
+            <title>{point.ip} · {point.consensus}+ source lists · approximate IP location: {point.city ? `${point.city}, ` : ''}{point.country} · not a confirmed attack origin</title>
+          </g>
+        ))}
+      </g>
+      <g className="event-points">
+        {visibleEvents.map((event) => (
+          <g
+            className={`event-point ${selectedEventId === event.id ? 'event-point-selected' : ''}`}
+            key={event.id}
+            transform={`translate(${event.x} ${event.y})`}
+            role="button"
+            tabIndex="0"
+            aria-label={`Magnitude ${event.magnitude.toFixed(1)} earthquake, ${event.place}, ${formatEventTime(event.occurredAt)} UTC`}
+            onClick={() => onSelectEvent(event.id)}
+            onKeyDown={(keyEvent) => {
+              if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                keyEvent.preventDefault()
+                onSelectEvent(event.id)
+              }
+            }}
+          >
+            <circle className="event-point-halo" r="9" />
+            <circle className="event-point-core" r="4" />
+            <title>M{event.magnitude.toFixed(1)} earthquake · {event.place} · {formatEventTime(event.occurredAt)} UTC · USGS</title>
+          </g>
+        ))}
+      </g>
+      <g className="news-points">
+        {visibleNews.map((article) => (
+          <g
+            className={`news-point ${article.location.precision === 'country' ? 'news-point-country' : ''} ${selectedNewsId === article.id ? 'news-point-selected' : ''}`}
+            key={article.id}
+            transform={`translate(${article.x} ${article.y})`}
+            role="button"
+            tabIndex="0"
+            aria-label={`News location: ${article.location.name}. ${article.title}. Approximate ${article.location.precision} location matched in the ${article.locationBasis}.`}
+            onClick={() => onSelectNews(article.id)}
+            onKeyDown={(keyEvent) => {
+              if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                keyEvent.preventDefault()
+                onSelectNews(article.id)
+              }
+            }}
+          >
+            <circle className="news-point-area" r={article.location.precision === 'city' ? 14 : 22} />
+            <circle className="news-point-core" r="4" />
+            <title>{article.location.name} · approx. {article.location.precision} match · {article.title} · BBC News</title>
           </g>
         ))}
       </g>
       <g className="map-coordinates">
-        <text x="22" y="28">LIVE GLOBAL TELEMETRY</text>
-        <text x="22" y="47">38° 54′ N  ·  77° 02′ W</text>
-        <text x="978" y="476" textAnchor="end">PROJECTION · EQUIRECTANGULAR</text>
+        <text x="22" y="28">PUBLIC THREAT INTELLIGENCE</text>
+        <text x="22" y="47">{visiblePoints.length} IP LOCATIONS · {visibleEvents.length} EARTHQUAKES · {visibleNews.length} NEWS AREAS</text>
+        <text x="978" y="476" textAnchor="end">APPROXIMATE LOCATIONS · DISTINCT DATA LAYERS</text>
       </g>
     </svg>
   )
 }
 
-function severityLabel(severity) {
-  return severity.charAt(0).toUpperCase() + severity.slice(1)
-}
-
 function App() {
   const [activeTab, setActiveTab] = useState('Threat map')
-  const [filter, setFilter] = useState('All activity')
-  const [selectedIncident, setSelectedIncident] = useState(null)
-  const [timeRange, setTimeRange] = useState('24H')
+  const [filter, setFilter] = useState('all')
+  const [selectedIp, setSelectedIp] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sourceOpen, setSourceOpen] = useState(false)
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [feed, setFeed] = useState(() => loadCachedThreatFeed())
+  const [feedError, setFeedError] = useState('')
+  const [feedLoading, setFeedLoading] = useState(false)
+  const [geoLocations, setGeoLocations] = useState([])
+  const [geoFailures, setGeoFailures] = useState(0)
+  const [geoAttempted, setGeoAttempted] = useState(0)
+  const [geoLoading, setGeoLoading] = useState(false)
+  const feedLoadingRef = useRef(false)
+  const [globalEvents, setGlobalEvents] = useState([])
+  const [eventsUpdatedAt, setEventsUpdatedAt] = useState(null)
+  const [eventsError, setEventsError] = useState('')
+  const [eventsLoading, setEventsLoading] = useState(false)
+  const [showEarthquakes, setShowEarthquakes] = useState(true)
+  const [selectedEventId, setSelectedEventId] = useState(null)
+  const eventsLoadingRef = useRef(false)
+  const [newsArticles, setNewsArticles] = useState([])
+  const [newsUpdatedAt, setNewsUpdatedAt] = useState(null)
+  const [newsError, setNewsError] = useState('')
+  const [newsLoading, setNewsLoading] = useState(false)
+  const [showNews, setShowNews] = useState(true)
+  const [selectedNewsId, setSelectedNewsId] = useState(null)
+  const newsLoadingRef = useRef(false)
 
-  const filteredIncidents = useMemo(
-    () => incidents.filter((incident) => filter === 'All activity' || incident.severity === filter.toLowerCase()),
-    [filter],
-  )
+  const refreshFeed = useCallback(async () => {
+    if (feedLoadingRef.current) return
+    feedLoadingRef.current = true
+    setFeedLoading(true)
+    try {
+      setFeed(await loadThreatFeed())
+      setFeedError('')
+    } catch (error) {
+      console.error('Could not refresh the public IPsum threat feed.', error)
+      setFeedError(error instanceof Error ? error.message : 'Could not refresh the public threat feed.')
+      setFeed((current) => current ? { ...current, stale: true } : current)
+    } finally {
+      feedLoadingRef.current = false
+      setFeedLoading(false)
+    }
+  }, [])
+
+  const refreshLocations = useCallback(async (indicators, feedVersion) => {
+    if (!indicators?.length || !feedVersion) return
+    setGeoLoading(true)
+    try {
+      const result = await resolveIndicatorLocations(indicators, feedVersion)
+      setGeoLocations(result.locations)
+      setGeoAttempted(result.attempted)
+      setGeoFailures(result.failures)
+    } catch (error) {
+      console.error('Could not resolve IP indicator locations.', error)
+      setGeoFailures((count) => count + 1)
+    } finally {
+      setGeoLoading(false)
+    }
+  }, [])
+
+  const refreshGlobalEvents = useCallback(async () => {
+    if (eventsLoadingRef.current) return
+    eventsLoadingRef.current = true
+    setEventsLoading(true)
+    try {
+      const result = await loadGlobalEvents()
+      setGlobalEvents(result.events)
+      setEventsUpdatedAt(result.updatedAt)
+      setEventsError('')
+    } catch (error) {
+      console.error('Could not refresh the USGS global-events feed.', error)
+      setEventsError(error instanceof Error ? error.message : 'Could not refresh global events.')
+    } finally {
+      eventsLoadingRef.current = false
+      setEventsLoading(false)
+    }
+  }, [])
+
+  const refreshNews = useCallback(async () => {
+    if (newsLoadingRef.current) return
+    newsLoadingRef.current = true
+    setNewsLoading(true)
+    try {
+      const result = await loadGlobalNews()
+      setNewsArticles(result.articles)
+      setNewsUpdatedAt(result.updatedAt)
+      setNewsError('')
+    } catch (error) {
+      console.error('Could not refresh the BBC World news feed.', error)
+      setNewsError(error instanceof Error ? error.message : 'Could not refresh global news.')
+    } finally {
+      newsLoadingRef.current = false
+      setNewsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshFeed()
+    const timer = window.setInterval(refreshFeed, threatFeedInfo.refreshMinutes * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [refreshFeed])
+
+  useEffect(() => {
+    refreshGlobalEvents()
+    const timer = window.setInterval(refreshGlobalEvents, globalEventsInfo.refreshMinutes * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [refreshGlobalEvents])
+
+  useEffect(() => {
+    refreshNews()
+    const timer = window.setInterval(refreshNews, globalNewsInfo.refreshMinutes * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [refreshNews])
+
+  useEffect(() => {
+    if (!feed) return undefined
+    let cancelled = false
+    setGeoLoading(true)
+    resolveIndicatorLocations(feed.indicators, feed.sha)
+      .then((result) => {
+        if (cancelled) return
+        setGeoLocations(result.locations)
+        setGeoAttempted(result.attempted)
+        setGeoFailures(result.failures)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.error('Could not resolve IP indicator locations.', error)
+        setGeoFailures((count) => count + 1)
+      })
+      .finally(() => { if (!cancelled) setGeoLoading(false) })
+    return () => { cancelled = true }
+  }, [feed?.sha])
+
+  useEffect(() => {
+    if (!searchOpen) return undefined
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setSearchOpen(false)
+        setSearchQuery('')
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [searchOpen])
+
+  const highCount = feed?.indicators.filter((indicator) => indicator.consensus >= 6).length ?? 0
+  const mediumCount = feed ? feed.indicators.length - highCount : 0
+  const filteredIndicators = useMemo(() => {
+    if (!feed) return []
+    const query = searchQuery.trim().toLowerCase()
+    return feed.indicators.filter((indicator) => {
+      if (filter === 'high' && indicator.consensus < 6) return false
+      if (filter === 'medium' && indicator.consensus >= 6) return false
+      if (!query) return true
+      const location = geoLocations.find((item) => item.ip === indicator.ip)
+      return [indicator.ip, location?.country, location?.countryCode, location?.city, location?.organization]
+        .some((value) => value?.toLowerCase().includes(query))
+    })
+  }, [feed, filter, geoLocations, searchQuery])
+
+  const visibleLocations = useMemo(() => {
+    const matches = new Set(filteredIndicators.map((indicator) => indicator.ip))
+    return geoLocations.filter((location) => matches.has(location.ip))
+  }, [filteredIndicators, geoLocations])
+
+  const navigateTo = (tab) => {
+    setActiveTab(tab.label)
+    document.getElementById(tab.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const exportIndicators = () => {
+    if (!feed) return
+    const rows = [['IP address', 'Minimum source-list consensus', 'Approximate city', 'Approximate country', 'ASN organization']]
+    for (const indicator of filteredIndicators) {
+      const location = geoLocations.find((item) => item.ip === indicator.ip)
+      rows.push([indicator.ip, `${indicator.consensus}+`, location?.city ?? '', location?.country ?? '', location?.organization ?? ''])
+    }
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n')
+    const downloadUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = 'sentinel-threat-indicators.csv'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000)
+  }
+
+  const selectIndicator = (ip) => {
+    setSelectedIp(ip)
+    document.getElementById(`indicator-${ip}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
 
   return (
     <main className="app-shell">
@@ -125,35 +389,34 @@ function App() {
 
         <div className="workspace-switch">
           <span className="workspace-avatar">N</span>
-          <span className="workspace-copy"><strong>Northstar Security</strong><small>Enterprise workspace</small></span>
+          <span className="workspace-copy"><strong>Northstar Security</strong><small>Public intelligence view</small></span>
           <span className="workspace-caret">⌄</span>
         </div>
 
         <div className="nav-label">MONITOR</div>
-        <nav className="primary-nav" aria-label="Main navigation">
+        <nav className="primary-nav" aria-label="Dashboard sections">
           {tabs.map((tab) => (
-            <button className={`nav-item ${activeTab === tab.label ? 'active' : ''}`} key={tab.label} onClick={() => setActiveTab(tab.label)} aria-current={activeTab === tab.label ? 'page' : undefined}>
-              <Icon name={tab.icon} /><span>{tab.label}</span>{tab.count && <span className="nav-count">{tab.count}</span>}
+            <button className={`nav-item ${activeTab === tab.label ? 'active' : ''}`} key={tab.label} onClick={() => navigateTo(tab)} aria-current={activeTab === tab.label ? 'location' : undefined}>
+              <Icon name={tab.icon} /><span>{tab.label}</span>
             </button>
           ))}
         </nav>
 
         <div className="nav-label intel-label">INTELLIGENCE</div>
-        <button className="nav-item subdued" onClick={() => setActiveTab('Asset inventory')}><span className="nav-mini-icon">◈</span><span>Asset inventory</span></button>
-        <button className="nav-item subdued" onClick={() => setActiveTab('Reports')}><span className="nav-mini-icon">▤</span><span>Reports</span></button>
+        <button className="nav-item subdued" onClick={() => navigateTo(tabs[3])}><span className="nav-mini-icon">◈</span><span>Feed sources</span></button>
+        <button className="nav-item subdued" onClick={exportIndicators}><Icon name="download" /><span>Export indicators</span></button>
 
         <div className="sidebar-spacer" />
         <div className="plan-card">
-          <div className="plan-card-top"><span className="plan-icon">✳</span><span className="plan-status">PRO</span></div>
-          <strong>Threat coverage</strong>
-          <p>Your global sensors are protecting <b>1,284 assets.</b></p>
-          <div className="coverage-track"><span /></div>
-          <div className="coverage-caption"><span>Sensor network</span><b>98.4%</b></div>
+          <div className="plan-card-top"><span className="plan-icon">✳</span><span className="plan-status">PUBLIC</span></div>
+          <strong>Feed health</strong>
+          <p>IPsum publishes a refreshed reputation feed about <b>once every 24 hours.</b></p>
+          <div className="coverage-caption"><span>Publisher check</span><b>15 min</b></div>
         </div>
-        <button className="nav-item settings-link" onClick={() => setActiveTab('Settings')}><Icon name="settings" /><span>Settings</span></button>
+        <button className="nav-item settings-link" onClick={refreshFeed}><Icon name="clock" /><span>Refresh intelligence</span></button>
         <div className="profile">
-          <span className="profile-avatar">JD</span>
-          <span className="profile-copy"><strong>Jordan Davis</strong><small>Security analyst</small></span>
+          <span className="profile-avatar">IP</span>
+          <span className="profile-copy"><strong>Public indicators</strong><small>No private network telemetry</small></span>
           <span className="profile-menu">···</span>
         </div>
       </aside>
@@ -162,129 +425,162 @@ function App() {
         <header className="topbar">
           <div className="breadcrumbs"><span>Monitor</span><Icon name="chevron" size={14} /><strong>{activeTab}</strong></div>
           <div className="topbar-actions">
-            <span className="system-health"><i /> All systems operational</span>
+            <span className={`system-health ${feedError ? 'system-warning' : ''}`}><i />{feedError ? 'Feed needs attention' : feedLoading ? 'Checking public feed' : feed?.stale ? 'Cached feed data' : feed ? 'Public feed connected' : 'Connecting to public feed'}</span>
             <span className="topbar-divider" />
-            <button className="icon-button" aria-label="Search" onClick={() => setSearchOpen(!searchOpen)}><Icon name="search" /></button>
-            <button className="icon-button notification-button" aria-label="Notifications"><Icon name="bell" /><i /></button>
-            <button className="help-button">Help center <Icon name="arrow" size={13} /></button>
+            <button className="icon-button" aria-label="Search threat indicators" aria-expanded={searchOpen} onClick={() => { setSearchOpen(!searchOpen); setNotificationOpen(false) }}><Icon name="search" /></button>
+            <button className="icon-button notification-button" aria-label="Threat feed status" aria-expanded={notificationOpen} onClick={() => { setNotificationOpen(!notificationOpen); setSearchOpen(false) }}><Icon name="bell" />{feedError && <i />}</button>
+            <a className="help-button" href={threatFeedInfo.repository} target="_blank" rel="noreferrer">Feed documentation <Icon name="arrow" size={13} /></a>
           </div>
-          {searchOpen && <div className="search-popover"><Icon name="search" size={16} /><input autoFocus aria-label="Search incidents and locations" placeholder="Search incidents, locations..." /><kbd>ESC</kbd><button onClick={() => setSearchOpen(false)} aria-label="Close search">×</button></div>}
+          {searchOpen && <div className="search-popover"><Icon name="search" size={16} /><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} aria-label="Search threat indicators" placeholder="Search an IP, country, city, or ASN..." /><kbd>ESC</kbd><button onClick={() => { setSearchOpen(false); setSearchQuery('') }} aria-label="Close search">×</button></div>}
+          {notificationOpen && <div className="feed-popover" role="status"><strong>{feedError ? 'Threat feed warning' : 'Threat feed status'}</strong><span>{feedError || (feed ? `Latest source list published ${formatDate(feed.publishedAt)}.` : 'Waiting for source data.')}</span><span>Checked: {formatDate(feed?.checkedAt)}</span><button onClick={refreshFeed} disabled={feedLoading}>{feedLoading ? 'Checking…' : 'Check now'}</button></div>}
         </header>
 
         <div className="dashboard-content">
-          <div className="page-heading">
+          <div className="page-heading" id="overview">
             <div>
-              <div className="eyebrow"><span className="live-dot" /> GLOBAL SECURITY OPERATIONS</div>
-              <h1>Threat overview<span>.</span></h1>
-              <p className="page-subtitle">Your global security posture, at a glance.</p>
+              <div className="eyebrow"><span className={feedError ? 'status-dot status-warning' : 'live-dot'} /> PUBLIC THREAT INTELLIGENCE</div>
+              <h1>Suspicious IP indicators<span>.</span></h1>
+              <p className="page-subtitle">Multi-source reputation intelligence, refreshed from its publisher daily.</p>
             </div>
-            <button className="range-button" onClick={() => setTimeRange(timeRange === '24H' ? '7D' : timeRange === '7D' ? '30D' : '24H')}>
-              <Icon name="clock" size={15} /> Last {timeRange === '24H' ? '24 hours' : timeRange === '7D' ? '7 days' : '30 days'} <span className="range-caret">⌄</span>
-            </button>
+            <button className="range-button refresh-button" onClick={refreshFeed} disabled={feedLoading}><Icon name="clock" size={15} />{feedLoading ? 'Checking feed…' : 'Refresh intelligence'}</button>
           </div>
 
-          <section className="stats-grid" aria-label="Security overview statistics">
-            <article className="stat-card">
-              <div className="stat-label">ATTACKS BLOCKED <span className="stat-icon green-icon">↗</span></div>
-              <div className="stat-value">2,847</div>
-              <div className="stat-foot"><span className="change-positive">↑ 12.8%</span><span>vs. previous period</span></div>
-              <div className="sparkline spark-green"><svg viewBox="0 0 92 32" aria-hidden="true"><path d="M2 27 13 22 24 24 35 13 46 17 57 8 68 14 79 5 90 8" /></svg></div>
-            </article>
-            <article className="stat-card">
-              <div className="stat-label">ACTIVE THREATS <span className="stat-icon red-icon">⌁</span></div>
-              <div className="stat-value">18<span className="value-unit"> events</span></div>
-              <div className="stat-foot"><span className="change-alert">6 critical</span><span>requiring attention</span></div>
-              <div className="sparkline spark-red"><svg viewBox="0 0 92 32" aria-hidden="true"><path d="M2 25 13 21 24 24 35 13 46 17 57 11 68 16 79 4 90 9" /></svg></div>
-            </article>
-            <article className="stat-card">
-              <div className="stat-label">PROTECTED ASSETS <span className="stat-icon cyan-icon">⌘</span></div>
-              <div className="stat-value">1,284</div>
-              <div className="stat-foot"><span className="change-positive">↑ 24</span><span>added this month</span></div>
-              <div className="sparkline spark-cyan"><svg viewBox="0 0 92 32" aria-hidden="true"><path d="M2 26 13 20 24 24 35 18 46 20 57 11 68 14 79 7 90 3" /></svg></div>
-            </article>
-            <article className="stat-card">
-              <div className="stat-label">NETWORK UPTIME <span className="stat-icon green-icon">⌁</span></div>
-              <div className="stat-value">99.98<span className="value-unit">%</span></div>
-              <div className="stat-foot"><span className="change-positive">Optimal</span><span>last 30 days</span></div>
-              <div className="uptime-bars" aria-label="Uptime consistently above 99 percent">{Array.from({ length: 17 }, (_, index) => <i key={index} style={{ height: `${18 + ((index * 17) % 17)}px` }} />)}</div>
-            </article>
+          <div className="reality-banner"><span className="info-mark">i</span><span><strong>This is threat intelligence, not real-time incident telemetry.</strong> IPsum aggregates 30+ public blocklists and updates daily. A listed IP is not proof of an active attack on your network.</span></div>
+          {feedError && <div className="feed-error" role="alert"><strong>Feed refresh failed.</strong> {feedError} {feed && 'Showing the last successful cached snapshot.'}<button onClick={refreshFeed} disabled={feedLoading}>Retry</button></div>}
+
+          <section className="stats-grid" aria-label="Public threat feed statistics">
+            <article className="stat-card"><div className="stat-label">CORROBORATED INDICATORS <span className="stat-icon green-icon">◎</span></div><div className="stat-value">{feed ? formatNumber(feed.indicators.length) : '—'}</div><div className="stat-foot"><span className="change-positive">3+ independent lists</span><span>in the current feed</span></div></article>
+            <article className="stat-card"><div className="stat-label">STRONG CONSENSUS <span className="stat-icon red-icon">⌁</span></div><div className="stat-value">{feed ? formatNumber(highCount) : '—'}</div><div className="stat-foot"><span className="change-alert">6+ source lists</span><span>higher corroboration</span></div></article>
+            <article className="stat-card"><div className="stat-label">APPROXIMATE LOCATIONS <span className="stat-icon cyan-icon">⌖</span></div><div className="stat-value">{geoLoading ? '…' : `${geoLocations.length}/${geoAttempted || threatFeedInfo.geoLookupLimit}`}</div><div className="stat-foot"><span>Sample across both tiers</span><span>IP GeoIP, not attack origin</span></div></article>
+            <article className="stat-card"><div className="stat-label">SOURCE LAST UPDATED <span className="stat-icon green-icon">◷</span></div><div className="stat-value freshness-value">{feed ? new Date(feed.publishedAt).toISOString().slice(0, 10) : '—'}</div><div className="stat-foot"><span>{feed?.stale ? 'Cached snapshot' : 'Publisher date (UTC)'}</span><span>checks every 15 min</span></div></article>
           </section>
 
-          <section className="map-panel">
+          <section className="map-panel" id="threat-map">
             <div className="panel-heading map-heading">
-              <div><h2>Global threat activity</h2><p>Real-time attack telemetry across your network</p></div>
+              <div><h2>Threat intelligence &amp; global events</h2><p>Separate layers: approximate IP hosting locations, news areas, and USGS earthquakes</p></div>
               <div className="map-heading-actions">
-                <div className="live-badge"><span className="live-dot" /> LIVE</div>
-                <button className="map-menu" aria-label="Map options">···</button>
+                <div className={`feed-badge ${feed?.stale || feedError ? 'badge-stale' : ''}`}><span className={feedError ? 'status-dot status-warning' : 'live-dot'} />{feedLoading ? 'CHECKING' : feed?.stale ? 'CACHED' : 'PUBLIC FEED'}</div>
+                <button className="map-menu" aria-label="Threat intelligence source options" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>···</button>
+                {sourceOpen && <div className="map-options"><strong>Intelligence sources</strong><a href={threatFeedInfo.repository} target="_blank" rel="noreferrer">IPsum · public blocklists <Icon name="arrow" size={12} /></a><a href={threatFeedInfo.geolocationProvider} target="_blank" rel="noreferrer">ipapi.co · IP GeoIP <Icon name="arrow" size={12} /></a><button onClick={exportIndicators}>Export filtered indicators (.csv)</button><span>Public indicator data can be stale and may contain false positives.</span></div>}
               </div>
             </div>
-            <div className="map-filter-row" role="group" aria-label="Filter threat map by severity">
-              {['All activity', 'Critical', 'High', 'Medium'].map((option) => <button key={option} className={`filter-chip ${filter === option ? 'selected' : ''}`} onClick={() => setFilter(option)}>{option === 'All activity' ? <span className="filter-total">18</span> : <i className={`severity-dot ${option.toLowerCase()}`} />}{option}</button>)}
+            <div className="map-filter-row">
+              <div className="consensus-filter-group" role="group" aria-label="Filter indicators by source-list consensus">
+              {consensusFilters.map((option) => <button key={option.id} className={`filter-chip ${filter === option.id ? 'selected' : ''}`} onClick={() => setFilter(option.id)}>{option.id === 'high' ? <i className="confidence-dot high" /> : option.id === 'medium' ? <i className="confidence-dot medium" /> : <span className="filter-total">{feed ? formatNumber(filteredIndicators.length) : '—'}</span>}{option.label}</button>)}
+              </div>
+              <button className={`filter-chip event-filter ${showEarthquakes ? 'selected' : ''}`} aria-pressed={showEarthquakes} onClick={() => setShowEarthquakes((current) => !current)}><i className="event-legend-dot" />Earthquakes {eventsLoading ? '…' : globalEvents.length ? `${globalEvents.length}` : ''}</button>
+              <button className={`filter-chip news-filter ${showNews ? 'selected' : ''}`} aria-pressed={showNews} onClick={() => setShowNews((current) => !current)}><i className="news-legend-dot" />World news {newsLoading ? '…' : newsArticles.length ? `${newsArticles.length}` : ''}</button>
               <span className="map-filter-spacer" />
-              <span className="map-updated"><span className="refresh-mark">↻</span> Updated just now</span>
+              <span className="map-updated">{newsUpdatedAt ? `News checked ${formatNewsTime(newsUpdatedAt)}` : newsLoading ? 'Loading world news…' : 'World news unavailable'}</span>
             </div>
-            <div className="map-stage"><WorldMap filter={filter} /></div>
-            <div className="map-footer">
-              <div className="legend"><span className="legend-title">THREAT LEVEL</span><span><i className="severity-dot critical" /> Critical</span><span><i className="severity-dot high" /> High</span><span><i className="severity-dot medium" /> Medium</span><span><i className="severity-dot low" /> Low</span></div>
-              <div className="map-scale"><span>LOW ACTIVITY</span><i /><i /><i /><i /><i /><span>HIGH</span></div>
+            <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
+            <div className="map-footer"><div className="legend"><span className="legend-title">MAP KEY</span><span><i className="confidence-dot high" /> 6+ source lists</span><span><i className="confidence-dot medium" /> 3-5 source lists</span><span><i className="event-legend-dot" /> USGS earthquake</span><span><i className="news-legend-dot" /> BBC news area</span></div><span className="map-disclaimer">News areas are approximate headline place matches.</span></div>
+          </section>
+
+          <section className="events-panel news-panel" aria-labelledby="news-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="news-title">Major world news</h2><p>BBC World headlines · highlighted only when a location is identified in the story text</p></div>
+              <div className="events-heading-actions">
+                <span>{newsUpdatedAt ? `Checked ${formatNewsTime(newsUpdatedAt)} UTC` : newsLoading ? 'Loading headlines…' : 'Feed unavailable'}</span>
+                <button onClick={refreshNews} disabled={newsLoading}>{newsLoading ? 'Checking…' : 'Refresh news'}</button>
+              </div>
+            </div>
+            {newsError && <div className="events-error" role="alert">Could not refresh BBC World news: {newsError}{newsArticles.length > 0 && ' Showing the last successful results.'}</div>}
+            <p className="news-location-note">Map areas are approximate matches against locations explicitly mentioned in each headline or summary; they do not show verified event boundaries. Some headlines may not have a mappable location.</p>
+            <div className="news-list">
+              {newsArticles.length ? newsArticles.slice(0, 8).map((article) => (
+                <article className={`news-story ${selectedNewsId === article.id ? 'news-story-selected' : ''}`} key={article.id}>
+                  <button className="news-story-select" onClick={() => { setSelectedNewsId(selectedNewsId === article.id ? null : article.id); if (article.location) setShowNews(true) }} aria-pressed={selectedNewsId === article.id}>
+                    <span className="news-story-content">
+                      <strong>{article.title}</strong>
+                      <span>{article.summary || 'Open the publisher article for more details.'}</span>
+                      <small>{article.location ? `Approx. area: ${article.location.name} · matched in ${article.locationBasis}` : 'No location confidently identified in this headline'}</small>
+                      <small>{formatNewsTime(article.publishedAt)} UTC</small>
+                    </span>
+                  </button>
+                  <a href={article.url} target="_blank" rel="noreferrer">BBC ↗</a>
+                </article>
+              )) : <div className="events-empty">{newsLoading ? 'Loading headlines from BBC World…' : newsError ? 'World news could not be loaded. Retry to check the feed.' : 'No recent world headlines are available.'}</div>}
+            </div>
+            <div className="news-source"><span>Source: <a href={globalNewsInfo.source} target="_blank" rel="noreferrer">BBC News World</a> · Updated every 15 minutes</span><span>Headlines are independently reported news, not threat intelligence.</span></div>
+          </section>
+
+          <section className="events-panel" aria-labelledby="events-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="events-title">Global events · earthquakes M4.5+</h2><p>USGS past-day feed · events are separate from cyber threat indicators</p></div>
+              <div className="events-heading-actions">
+                <span>{eventsUpdatedAt ? `Feed updated ${formatEventTime(eventsUpdatedAt)} UTC` : eventsLoading ? 'Loading events…' : 'Feed unavailable'}</span>
+                <button onClick={refreshGlobalEvents} disabled={eventsLoading}>{eventsLoading ? 'Checking…' : 'Refresh events'}</button>
+              </div>
+            </div>
+            {eventsError && <div className="events-error" role="alert">Could not refresh global events: {eventsError}{globalEvents.length > 0 && ' Showing the last successful results.'}</div>}
+            <div className="events-list">
+              {globalEvents.length ? globalEvents.slice(0, 8).map((event) => (
+                <article className={`global-event ${selectedEventId === event.id ? 'global-event-selected' : ''}`} key={event.id}>
+                  <button className="global-event-select" onClick={() => { setSelectedEventId(selectedEventId === event.id ? null : event.id); setShowEarthquakes(true) }} aria-pressed={selectedEventId === event.id}>
+                    <span className="event-magnitude">M{event.magnitude.toFixed(1)}</span>
+                    <span className="event-description"><strong>{event.place}</strong><small>{formatEventTime(event.occurredAt)} UTC{event.depth === null ? '' : ` · ${event.depth.toFixed(0)} km depth`}</small></span>
+                  </button>
+                  {event.url && <a href={event.url} target="_blank" rel="noreferrer" aria-label={`View USGS details for magnitude ${event.magnitude.toFixed(1)} earthquake at ${event.place}`}>USGS ↗</a>}
+                </article>
+              )) : <div className="events-empty">{eventsLoading ? 'Loading recent earthquakes from USGS…' : eventsError ? 'Global events could not be loaded. Retry to check the USGS feed.' : 'No M4.5+ earthquakes reported in the past day.'}</div>}
             </div>
           </section>
 
           <section className="bottom-grid">
-            <article className="bottom-card trend-card">
-              <div className="panel-heading compact-heading"><div><h2>Attack volume</h2><p>Blocked attempts over time</p></div><button className="subtle-select">Last 24 hours <span>⌄</span></button></div>
-              <div className="chart-wrap">
-                <div className="chart-ylabels"><span>400</span><span>300</span><span>200</span><span>100</span><span>0</span></div>
-                <svg className="volume-chart" viewBox="0 0 660 136" preserveAspectRatio="none" role="img" aria-label="Attack volume trending upward throughout the day">
-                  <defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#a8ff74" stopOpacity=".2" /><stop offset="100%" stopColor="#a8ff74" stopOpacity="0" /></linearGradient></defs>
-                  <path className="chart-gridline" d="M0 8H660M0 38H660M0 68H660M0 98H660M0 128H660" />
-                  <path className="chart-area" d="M0 100 C25 96 31 84 54 89 S94 101 112 82 S148 76 165 80 S204 61 220 70 S252 57 275 62 S305 45 330 57 S360 50 385 54 S416 38 440 43 S475 30 495 42 S526 27 549 34 S580 18 606 29 S639 10 660 13 V136 H0Z" />
-                  <path className="chart-line" d="M0 100 C25 96 31 84 54 89 S94 101 112 82 S148 76 165 80 S204 61 220 70 S252 57 275 62 S305 45 330 57 S360 50 385 54 S416 38 440 43 S475 30 495 42 S526 27 549 34 S580 18 606 29 S639 10 660 13" />
-                  <circle cx="660" cy="13" r="4" />
-                </svg>
+            <article className="bottom-card trend-card" id="source-panel">
+              <div className="panel-heading compact-heading"><div><h2>Source corroboration</h2><p>Public list overlap, not an incident severity score</p></div><a className="subtle-select" href={threatFeedInfo.repository} target="_blank" rel="noreferrer">View source <Icon name="arrow" size={12} /></a></div>
+              <div className="confidence-breakdown">
+                <div className="confidence-row"><span><i className="confidence-dot high" /> 6+ independent lists</span><strong>{feed ? formatNumber(highCount) : '—'}</strong></div>
+                <div className="confidence-track"><span style={{ width: `${feed?.indicators.length ? (highCount / feed.indicators.length) * 100 : 0}%` }} /></div>
+                <div className="confidence-row"><span><i className="confidence-dot medium" /> 3-5 independent lists</span><strong>{feed ? formatNumber(mediumCount) : '—'}</strong></div>
+                <div className="confidence-track confidence-track-medium"><span style={{ width: `${feed?.indicators.length ? (mediumCount / feed.indicators.length) * 100 : 0}%` }} /></div>
+                <p>Higher overlap is stronger reputation evidence, but still does not confirm malicious activity against any particular network.</p>
               </div>
-              <div className="chart-xlabels"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>Now</span></div>
             </article>
             <article className="bottom-card response-card">
-              <div className="panel-heading compact-heading"><div><h2>Response performance</h2><p>Mean time to detect &amp; resolve</p></div><span className="response-health">ON TARGET</span></div>
-              <div className="response-metrics">
-                <div><span className="response-metric-label">MEAN TIME TO DETECT</span><strong>2<span>m</span> 14<span>s</span></strong><small><b>↓ 18%</b> vs. last month</small></div>
-                <span className="response-divider" />
-                <div><span className="response-metric-label">MEAN TIME TO RESOLVE</span><strong>18<span>m</span> 42<span>s</span></strong><small><b>↓ 24%</b> vs. last month</small></div>
+              <div className="panel-heading compact-heading"><div><h2>Feed freshness &amp; scope</h2><p>What these public indicators can tell you</p></div><span className="response-health">DAILY SOURCE</span></div>
+              <div className="freshness-details">
+                <div><span>UPSTREAM PUBLISHED</span><strong>{formatDate(feed?.publishedAt)}</strong></div>
+                <div><span>LAST CHECKED HERE</span><strong>{formatDate(feed?.checkedAt)}</strong></div>
+                <p>This feed has no per-IP observation times and is not a live event stream. Use your SIEM, firewall, or EDR telemetry to identify actual events on your network.</p>
               </div>
-              <div className="response-note"><span className="response-check">✓</span> Your team is responding faster than 92% of peers</div>
             </article>
           </section>
         </div>
       </section>
 
       <aside className="activity-sidebar">
-        <div className="activity-header">
-          <div className="activity-title-row"><h2>Live activity</h2><span className="activity-count">18</span><button className="activity-more" aria-label="More activity options">···</button></div>
-          <p><span className="live-dot" /> Streaming global events</p>
+        <div className="activity-header" id="indicator-panel">
+          <div className="activity-title-row"><h2>Threat indicators</h2><span className="activity-count">{formatNumber(feed?.indicators.length ?? 0)}</span><button className="activity-more" aria-label="Export threat indicators" onClick={exportIndicators}><Icon name="download" size={15} /></button></div>
+          <p><span className={feedError ? 'status-dot status-warning' : 'live-dot'} />{feedLoading ? 'Checking IPsum feed' : feed?.stale ? 'Cached public intelligence' : 'Public blocklist intelligence'}</p>
         </div>
-        <div className="activity-summary"><span><i className="severity-dot critical" /><b>6</b> Critical</span><span><i className="severity-dot high" /><b>8</b> High</span><span><i className="severity-dot medium" /><b>4</b> Medium</span></div>
+        <div className="activity-summary"><span><i className="confidence-dot high" /><b>{formatNumber(highCount)}</b> 6+ lists</span><span><i className="confidence-dot medium" /><b>{formatNumber(mediumCount)}</b> 3-5 lists</span></div>
         <div className="activity-list">
-          {filteredIncidents.length ? filteredIncidents.map((incident, index) => (
-            <button className={`incident ${selectedIncident === incident.id ? 'incident-selected' : ''}`} key={incident.id} onClick={() => setSelectedIncident(selectedIncident === incident.id ? null : incident.id)} aria-expanded={selectedIncident === incident.id}>
-              <span className={`incident-indicator ${incident.color}`}><span /></span>
-              <span className="incident-content">
-                <span className="incident-meta"><span className={`severity-text ${incident.severity}`}>{severityLabel(incident.severity)}</span><span className="incident-time">{incident.time}</span></span>
-                <strong>{incident.title}</strong>
-                <span className="incident-route"><span>{incident.origin}</span><b>→</b><span>{incident.target}</span></span>
-                {selectedIncident === incident.id && <span className="incident-detail"><span>{incident.id}</span><span>{incident.type} threat · automatically contained</span></span>}
-              </span>
-            </button>
-          )) : <div className="empty-activity">No {filter.toLowerCase()} events right now.</div>}
+          {filteredIndicators.length ? filteredIndicators.slice(0, 50).map((indicator) => {
+            const location = geoLocations.find((item) => item.ip === indicator.ip)
+            return (
+              <button className={`incident ${selectedIp === indicator.ip ? 'incident-selected' : ''}`} id={`indicator-${indicator.ip}`} key={indicator.ip} onClick={() => setSelectedIp(selectedIp === indicator.ip ? null : indicator.ip)} aria-expanded={selectedIp === indicator.ip}>
+                <span className={`incident-indicator ${indicator.consensus >= 6 ? 'orange' : 'yellow'}`}><span /></span>
+                <span className="incident-content">
+                  <span className="incident-meta"><span className={`severity-text ${indicator.consensus >= 6 ? 'high' : 'medium'}`}>{indicator.consensus}+ SOURCE MATCH</span><span className="incident-time">IP REPUTATION</span></span>
+                  <strong>{indicator.ip}</strong>
+                  <span className="incident-route"><span>{location ? `${location.city ? `${location.city}, ` : ''}${location.country}` : 'Approximate location unavailable'}</span></span>
+                  {selectedIp === indicator.ip && <span className="incident-detail"><span>{indicator.consensus}+ independent public blocklists</span><span>{location?.organization ? `Network: ${location.organization}. ` : ''}IP geolocation indicates hosting location, not an attacker or event origin.</span></span>}
+                </span>
+              </button>
+            )
+          }) : <div className="empty-activity">{feedLoading ? 'Loading the public threat feed…' : feedError && !feed ? 'Threat indicators are unavailable until the feed can be loaded.' : searchQuery ? 'No indicators match your search.' : 'No indicators in this confidence tier.'}</div>}
         </div>
-        <button className="all-incidents" onClick={() => { setActiveTab('Incidents'); setFilter('All activity') }}>View all incidents <Icon name="arrow" size={14} /></button>
+        <div className="indicator-list-footer">{filteredIndicators.length > 50 ? `Showing 50 of ${formatNumber(filteredIndicators.length)} matching indicators.` : `${formatNumber(filteredIndicators.length)} matching indicators.`}</div>
         <div className="activity-divider" />
-        <div className="sensor-heading"><div><h3>Sensor network</h3><p>Regional coverage</p></div><button aria-label="Sensor network options">···</button></div>
+        <div className="sensor-heading"><div><h3>Sampled IP locations</h3><p>Approximate GeoIP, not sensors</p></div><button onClick={() => feed && refreshLocations(feed.indicators, feed.sha)} disabled={geoLoading || !feed} aria-label="Refresh sampled IP locations">{geoLoading ? '…' : '↻'}</button></div>
         <div className="sensor-list">
-          {[['North America', '426 sensors', '99.9%', 'north'], ['Europe', '318 sensors', '99.8%', 'europe'], ['Asia Pacific', '284 sensors', '98.7%', 'asia'], ['South America', '156 sensors', '99.2%', 'south']].map(([region, sensors, health, key]) => <div className="sensor-row" key={region}><span className={`sensor-pip ${key}`} /><span className="sensor-region"><strong>{region}</strong><small>{sensors}</small></span><span className="sensor-health">{health}</span></div>)}
+          {geoLocations.slice(0, 8).map((location) => <button className="sensor-row" key={location.ip} onClick={() => selectIndicator(location.ip)}><span className="sensor-pip" /><span className="sensor-region"><strong>{location.city ? `${location.city}, ` : ''}{location.country}</strong><small>{location.ip}</small></span><span className="sensor-health">{location.consensus}+</span></button>)}
+          {!geoLocations.length && <div className="geo-empty">{geoLoading ? 'Resolving a small sample of IPs…' : geoFailures ? 'Some IP locations could not be resolved. Retry to try again.' : 'No approximate locations available.'}</div>}
         </div>
-        <div className="sensor-foot"><span><i /> All regions connected</span><button aria-label="Refresh sensor network">↻</button></div>
-        <div className="activity-footer"><Icon name="clock" size={13} /> Last sync 4 seconds ago</div>
+        <div className="sensor-foot"><span>{geoFailures ? `${geoFailures} location lookups failed` : 'Approximate third-party GeoIP'}</span><button onClick={() => feed && refreshLocations(feed.indicators, feed.sha)} disabled={geoLoading || !feed} aria-label="Retry IP geolocation">↻</button></div>
+        <div className="activity-footer"><Icon name="clock" size={13} /> Daily-updated IPsum · checked every 15 min</div>
       </aside>
     </main>
   )
