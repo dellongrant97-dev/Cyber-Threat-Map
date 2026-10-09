@@ -1,6 +1,6 @@
 # Cyber-Threat-Map
 
-Sentinel is a responsive cybersecurity command-center dashboard with an SVG-based 2D global threat map, attack-route visualization, threat filters, incident feed, network health, and response metrics. The current interface uses realistic local mock data and does not require a backend.
+Sentinel is a responsive cybersecurity command-center dashboard with a high-resolution, Natural Earth 1:50m SVG world map, neon dot-matrix continents, attack-route visualization, threat filters, incident feed, network health, and response metrics. The current interface uses realistic local mock data and does not require a backend.
 
 ## Development
 
