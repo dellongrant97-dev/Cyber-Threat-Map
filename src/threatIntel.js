@@ -1,3 +1,5 @@
+import { readJsonCache, writeJsonCache } from './localCache.js'
+
 const FEED_REPOSITORY = 'stamparm/ipsum'
 const FEED_COMMIT_URL = `https://api.github.com/repos/${FEED_REPOSITORY}/commits?path=levels/6.txt&per_page=1`
 const RAW_REPOSITORY_URL = `https://raw.githubusercontent.com/${FEED_REPOSITORY}`
@@ -7,47 +9,20 @@ const FEED_CHECK_INTERVAL = 15 * 60 * 1000
 const GEO_LOOKUP_LIMIT = 16
 const VALID_IPV4 = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/
 
-function getLocalStorageItem(key) {
-  try {
-    return window.localStorage.getItem(key)
-  } catch (error) {
-    console.warn(`Could not read cached threat intelligence (${key}).`, error)
-    return null
-  }
-}
-
-function setLocalStorageItem(key, value) {
-  try {
-    window.localStorage.setItem(key, value)
-  } catch (error) {
-    console.warn(`Could not cache threat intelligence (${key}).`, error)
-  }
-}
-
 function readFeedCache() {
-  const value = getLocalStorageItem(SNAPSHOT_KEY)
-  if (!value) return null
-
-  try {
-    const snapshot = JSON.parse(value)
-    if (
-      typeof snapshot.sha !== 'string'
-      || !Number.isFinite(Date.parse(snapshot.publishedAt))
-      || !Array.isArray(snapshot.indicators)
-      || !snapshot.indicators.every((indicator) => indicator && typeof indicator.ip === 'string' && VALID_IPV4.test(indicator.ip) && [3, 6].includes(indicator.consensus))
-    ) return null
-    return snapshot
-  } catch (error) {
-    console.warn('Ignoring an invalid cached threat feed.', error)
-    return null
-  }
+  return readJsonCache(SNAPSHOT_KEY, (snapshot) => (
+    typeof snapshot?.sha === 'string'
+    && Number.isFinite(Date.parse(snapshot.publishedAt))
+    && Array.isArray(snapshot.indicators)
+    && snapshot.indicators.every((indicator) => indicator && typeof indicator.ip === 'string' && VALID_IPV4.test(indicator.ip) && [3, 6].includes(indicator.consensus))
+  ))
 }
 
-function parseIpList(text) {
+export function parseIpList(text) {
   return new Set(text.split(/\r?\n/).map((line) => line.trim()).filter((line) => VALID_IPV4.test(line)))
 }
 
-function createIndicators(threeOrMore, sixOrMore) {
+export function createIndicators(threeOrMore, sixOrMore) {
   const result = []
   for (const ip of threeOrMore) {
     result.push({ ip, consensus: sixOrMore.has(ip) ? 6 : 3 })
@@ -56,13 +31,9 @@ function createIndicators(threeOrMore, sixOrMore) {
 }
 
 function getGeoCache() {
-  const value = getLocalStorageItem(GEO_CACHE_KEY)
-  if (!value) return {}
-
-  try {
-    const cache = JSON.parse(value)
-    if (!cache || typeof cache !== 'object' || Array.isArray(cache)) return {}
-    return Object.fromEntries(Object.entries(cache).filter(([ip, location]) => (
+  const cache = readJsonCache(GEO_CACHE_KEY, (value) => (
+    value && typeof value === 'object' && !Array.isArray(value)
+    && Object.entries(value).every(([ip, location]) => (
       VALID_IPV4.test(ip)
       && Number.isFinite(location?.latitude)
       && location.latitude >= -90
@@ -71,11 +42,9 @@ function getGeoCache() {
       && location.longitude >= -180
       && location.longitude <= 180
       && typeof location?.country === 'string'
-    )))
-  } catch (error) {
-    console.warn('Ignoring invalid cached IP geolocation data.', error)
-    return {}
-  }
+    ))
+  ))
+  return cache ?? {}
 }
 
 function chooseGeoSample(indicators, limit, seed) {
@@ -134,7 +103,7 @@ export async function loadThreatFeed() {
   const checkedAt = new Date().toISOString()
   if (cached?.sha === latest.sha && Array.isArray(cached.indicators)) {
     const snapshot = { ...cached, checkedAt, stale: false }
-    setLocalStorageItem(SNAPSHOT_KEY, JSON.stringify(snapshot))
+    writeJsonCache(SNAPSHOT_KEY, snapshot)
     return snapshot
   }
 
@@ -155,7 +124,7 @@ export async function loadThreatFeed() {
     indicators: createIndicators(threeOrMore, sixOrMore),
     stale: false,
   }
-  setLocalStorageItem(SNAPSHOT_KEY, JSON.stringify(snapshot))
+  writeJsonCache(SNAPSHOT_KEY, snapshot)
   return snapshot
 }
 
@@ -202,7 +171,7 @@ export async function resolveIndicatorLocations(indicators, feedVersion) {
     const resolved = results.filter(Boolean)
     if (resolved.length) {
       nextCache = { ...nextCache, ...Object.fromEntries(resolved) }
-      setLocalStorageItem(GEO_CACHE_KEY, JSON.stringify(nextCache))
+      writeJsonCache(GEO_CACHE_KEY, nextCache)
     }
   }
 
