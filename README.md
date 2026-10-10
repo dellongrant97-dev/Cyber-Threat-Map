@@ -16,6 +16,8 @@ The separate **Global events** layer uses the [USGS past-day M4.5+ earthquake fe
 
 The **Major world news** panel displays recent [BBC World](https://www.bbc.co.uk/news/world) headlines and checks every 15 minutes. Its RSS feed is fetched through the public rss2json converter because the publisher feed does not permit direct browser access. The map highlights only places matched from a small built-in country/city gazetteer against each headline or summary; these are approximate reference points, not verified event boundaries. Headlines without a confident match remain in the list without a map marker. Story links lead to the BBC.
 
+The latest successfully loaded earthquake and news results are cached in the browser so they remain available if an upstream service is temporarily unavailable. Cached results are labeled as cached until a successful refresh; cache storage failures do not block feed loading.
+
 This static GitHub Pages demo is **not connected to an organization's SIEM, firewall, or EDR**, so it cannot report real-time attacks, blocked traffic, protected assets, or response times. Showing verified, real-time activity requires an authorized security-events API/backend for the organization's own telemetry. The UI deliberately does not invent incident timestamps or attack routes from blocklist data.
 
 ## Development
@@ -28,6 +30,8 @@ npm run dev
 ```
 
 Create a production build with `npm run build`.
+
+Run the public-feed parsing and cache tests with `npm test`.
 
 ## Deploy to GitHub Pages
 

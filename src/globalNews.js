@@ -1,8 +1,11 @@
+import { readJsonCache, writeJsonCache } from './localCache.js'
+
 const BBC_WORLD_FEED = 'https://feeds.bbci.co.uk/news/world/rss.xml'
 const RSS_CONVERTER = 'https://api.rss2json.com/v1/api.json'
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
+const CACHE_KEY = 'sentinel-global-news-v1'
 
 const headlineLocations = [
   { name: 'New York City, United States', latitude: 40.7128, longitude: -74.006, precision: 'city', terms: ['New York City', "New York City's", 'New York', 'NYC', 'Bronx', 'Marble Hill'] },
@@ -77,6 +80,68 @@ function cleanText(value) {
   return document.body.textContent.replace(/\s+/g, ' ').trim()
 }
 
+function isValidNewsCache(cache) {
+  return Number.isFinite(cache?.updatedAt)
+    && Array.isArray(cache.articles)
+    && cache.articles.every((article) => (
+      typeof article.id === 'string'
+      && typeof article.title === 'string'
+      && typeof article.summary === 'string'
+      && typeof article.url === 'string'
+      && article.url.startsWith('https://www.bbc.co.uk/')
+      && Number.isFinite(article.publishedAt)
+      && (!article.location || (
+        typeof article.location.name === 'string'
+        && Number.isFinite(article.location.latitude)
+        && article.location.latitude >= -90
+        && article.location.latitude <= 90
+        && Number.isFinite(article.location.longitude)
+        && article.location.longitude >= -180
+        && article.location.longitude <= 180
+      ))
+    ))
+}
+
+export function loadCachedGlobalNews() {
+  const cache = readJsonCache(CACHE_KEY, isValidNewsCache)
+  return cache ? { ...cache, stale: true } : null
+}
+
+export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner = cleanText } = {}) {
+  if (!Array.isArray(items)) throw new Error('The BBC World news feed returned invalid data.')
+  const articles = items.flatMap((item) => {
+    const title = textCleaner(item?.title)
+    const summary = textCleaner(item?.description)
+    const link = typeof item?.link === 'string' ? item.link : ''
+    const rawPublishedAt = item?.pubDate
+    const explicitTimezone = typeof rawPublishedAt === 'string' && /(?:Z|GMT|UTC|[+-]\d{2}:?\d{2})$/i.test(rawPublishedAt.trim())
+    const publishedAt = explicitTimezone
+      ? Date.parse(rawPublishedAt)
+      : new Date(`${rawPublishedAt} UTC`).getTime()
+    if (
+      !title
+      || !link.startsWith('https://www.bbc.co.uk/')
+      || !Number.isFinite(publishedAt)
+      || publishedAt > now + 60 * 60 * 1000
+      || publishedAt < now - NEWS_WINDOW_MS
+    ) return []
+
+    const titleLocation = findHeadlineLocation(title)
+    const location = titleLocation || findHeadlineLocation(summary)
+    return [{
+      id: link,
+      title,
+      summary,
+      url: link,
+      publishedAt,
+      location,
+      locationBasis: location ? (titleLocation ? 'headline' : 'summary') : null,
+    }]
+  }).sort((first, second) => second.publishedAt - first.publishedAt)
+
+  return articles.slice(0, MAX_NEWS_ITEMS)
+}
+
 export async function loadGlobalNews() {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 20000)
@@ -90,38 +155,14 @@ export async function loadGlobalNews() {
       throw new Error(feed?.message || 'The BBC World news feed returned invalid data.')
     }
 
-    const now = Date.now()
-    const articles = feed.items.flatMap((item) => {
-      const title = cleanText(item.title)
-      const summary = cleanText(item.description)
-      const link = typeof item.link === 'string' ? item.link : ''
-      const publishedAt = new Date(`${item.pubDate} UTC`).getTime()
-      if (
-        !title
-        || !link.startsWith('https://www.bbc.co.uk/')
-        || !Number.isFinite(publishedAt)
-        || publishedAt > now + 60 * 60 * 1000
-        || publishedAt < now - NEWS_WINDOW_MS
-      ) return []
-
-      const titleLocation = findHeadlineLocation(title)
-      const location = titleLocation || findHeadlineLocation(summary)
-      return [{
-        id: link,
-        title,
-        summary,
-        url: link,
-        publishedAt,
-        location,
-        locationBasis: location ? (titleLocation ? 'headline' : 'summary') : null,
-      }]
-    }).sort((first, second) => second.publishedAt - first.publishedAt)
-
-    return {
-      articles: articles.slice(0, MAX_NEWS_ITEMS),
+    const result = {
+      articles: normalizeGlobalNewsItems(feed.items),
       updatedAt: Date.now(),
       source: feed.feed?.title || 'BBC News',
+      stale: false,
     }
+    writeJsonCache(CACHE_KEY, result)
+    return result
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('The world news feed request timed out. Please retry.')
     throw error

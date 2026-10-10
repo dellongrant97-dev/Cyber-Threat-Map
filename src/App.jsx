@@ -6,8 +6,8 @@ import {
   resolveIndicatorLocations,
   threatFeedInfo,
 } from './threatIntel.js'
-import { globalEventsInfo, loadGlobalEvents } from './globalEvents.js'
-import { globalNewsInfo, loadGlobalNews } from './globalNews.js'
+import { globalEventsInfo, loadCachedGlobalEvents, loadGlobalEvents } from './globalEvents.js'
+import { globalNewsInfo, loadCachedGlobalNews, loadGlobalNews } from './globalNews.js'
 
 const tabs = [
   { label: 'Overview', icon: 'grid', target: 'overview' },
@@ -184,9 +184,30 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
   )
 }
 
+let cachedGlobeLandDots
+
+function getGlobeLandDots() {
+  if (cachedGlobeLandDots) return cachedGlobeLandDots
+
+  const projectionCanvas = document.createElement('canvas')
+  const projectionContext = projectionCanvas.getContext('2d')
+  if (!projectionContext) throw new Error('Canvas 2D is unavailable; the 3D globe cannot be rendered.')
+  const landPath = new Path2D(landShapes)
+  cachedGlobeLandDots = []
+  for (let latitude = -88; latitude <= 88; latitude += 2.5) {
+    for (let longitude = -178; longitude <= 178; longitude += 2.5) {
+      const mapX = ((longitude + 180) / 360) * 1000
+      const mapY = ((90 - latitude) / 180) * 500
+      if (projectionContext.isPointInPath(landPath, mapX, mapY)) cachedGlobeLandDots.push({ latitude, longitude })
+    }
+  }
+  return cachedGlobeLandDots
+}
+
 function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }) {
   const canvasRef = useRef(null)
   const sceneRef = useRef(null)
+  const requestRedrawRef = useRef(null)
   sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }
 
   useEffect(() => {
@@ -194,25 +215,22 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     const context = canvas?.getContext('2d')
     if (!canvas || !context) return undefined
 
-    const landPath = new Path2D(landShapes)
-    const landDots = []
-    for (let latitude = -88; latitude <= 88; latitude += 2.5) {
-      for (let longitude = -178; longitude <= 178; longitude += 2.5) {
-        const mapX = ((longitude + 180) / 360) * 1000
-        const mapY = ((90 - latitude) / 180) * 500
-        if (context.isPointInPath(landPath, mapX, mapY)) landDots.push({ latitude, longitude })
-      }
-    }
-
+    const landDots = getGlobeLandDots()
     let width = 0
     let height = 0
     let frame = 0
     let lastTime = 0
     let rotation = -0.25
     let dragX = null
+    let isVisible = true
+    let disposed = false
     let hitTargets = []
     let keyboardIndex = 0
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const scheduleDraw = () => {
+      if (disposed || !isVisible || document.hidden || frame) return
+      frame = window.requestAnimationFrame(draw)
+    }
     const resizeObserver = new ResizeObserver(([entry]) => {
       const bounds = entry.contentRect
       const ratio = Math.min(window.devicePixelRatio || 1, 2)
@@ -221,8 +239,20 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
       canvas.width = Math.max(1, Math.round(width * ratio))
       canvas.height = Math.max(1, Math.round(height * ratio))
       context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      scheduleDraw()
     })
     resizeObserver.observe(canvas)
+    const visibilityObserver = typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver(([entry]) => {
+        isVisible = entry.isIntersecting
+        if (isVisible) scheduleDraw()
+        else if (frame) {
+          window.cancelAnimationFrame(frame)
+          frame = 0
+        }
+      })
+      : null
+    visibilityObserver?.observe(canvas)
 
     const toSphere = (latitude, longitude, centerX, centerY, radius, turn) => {
       const lat = latitude * Math.PI / 180
@@ -236,6 +266,8 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     }
 
     const draw = (time) => {
+      frame = 0
+      if (!width || !height) return
       const elapsed = lastTime ? Math.min(time - lastTime, 40) : 0
       lastTime = time
       if (!reducedMotion.matches && dragX === null) rotation += elapsed * 0.000035
@@ -346,13 +378,14 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
       context.fillStyle = '#75888a'
       context.font = '8px monospace'
       context.fillText('3D GLOBE · DRAG TO ROTATE', 16, 22)
-      frame = window.requestAnimationFrame(draw)
+      if (!reducedMotion.matches && dragX === null) scheduleDraw()
     }
 
     const pointerDown = (event) => {
       dragX = event.clientX
       canvas.setPointerCapture(event.pointerId)
       canvas.classList.add('globe-dragging')
+      scheduleDraw()
     }
     const pointerMove = (event) => {
       if (dragX !== null) {
@@ -363,6 +396,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     const pointerUp = () => {
       dragX = null
       canvas.classList.remove('globe-dragging')
+      scheduleDraw()
     }
     const pointerClick = (event) => {
       if (canvas.dataset.dragged === 'true') {
@@ -378,6 +412,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     const pointerMoveWithDrag = (event) => {
       if (dragX !== null && Math.abs(event.clientX - dragX) > 1) canvas.dataset.dragged = 'true'
       pointerMove(event)
+      if (dragX !== null) scheduleDraw()
     }
     const keyDown = (event) => {
       if (!hitTargets.length) return
@@ -385,34 +420,57 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         event.preventDefault()
         keyboardIndex = (keyboardIndex + 1) % hitTargets.length
         canvas.setAttribute('aria-label', `Rotating 3D globe. Selected marker: ${hitTargets[keyboardIndex].label}. Press Enter to select; use arrow keys to cycle markers.`)
+        scheduleDraw()
       } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
         event.preventDefault()
         keyboardIndex = (keyboardIndex - 1 + hitTargets.length) % hitTargets.length
         canvas.setAttribute('aria-label', `Rotating 3D globe. Selected marker: ${hitTargets[keyboardIndex].label}. Press Enter to select; use arrow keys to cycle markers.`)
+        scheduleDraw()
       } else if (event.key === 'Enter') {
         event.preventDefault()
         hitTargets[keyboardIndex % hitTargets.length]?.action()
       }
     }
+    const handleVisibilityChange = () => {
+      if (document.hidden && frame) {
+        window.cancelAnimationFrame(frame)
+        frame = 0
+      } else scheduleDraw()
+    }
+    const handleMotionPreferenceChange = () => scheduleDraw()
     canvas.addEventListener('pointerdown', pointerDown)
     canvas.addEventListener('pointermove', pointerMoveWithDrag)
     canvas.addEventListener('pointerup', pointerUp)
     canvas.addEventListener('pointercancel', pointerUp)
     canvas.addEventListener('click', pointerClick)
     canvas.addEventListener('keydown', keyDown)
-    frame = window.requestAnimationFrame(draw)
+    canvas.addEventListener('focus', scheduleDraw)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    reducedMotion.addEventListener('change', handleMotionPreferenceChange)
+    requestRedrawRef.current = scheduleDraw
+    scheduleDraw()
 
     return () => {
+      disposed = true
       window.cancelAnimationFrame(frame)
       resizeObserver.disconnect()
+      visibilityObserver?.disconnect()
       canvas.removeEventListener('pointerdown', pointerDown)
       canvas.removeEventListener('pointermove', pointerMoveWithDrag)
       canvas.removeEventListener('pointerup', pointerUp)
       canvas.removeEventListener('pointercancel', pointerUp)
       canvas.removeEventListener('click', pointerClick)
       canvas.removeEventListener('keydown', keyDown)
+      canvas.removeEventListener('focus', scheduleDraw)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      reducedMotion.removeEventListener('change', handleMotionPreferenceChange)
+      requestRedrawRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    requestRedrawRef.current?.()
+  }, [indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId])
 
   return <canvas ref={canvasRef} className="globe-map" role="application" tabIndex="0" aria-label="Rotating 3D globe. Drag to rotate; use arrow keys to cycle markers and Enter to select." aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter" />
 }
@@ -433,15 +491,19 @@ function App() {
   const [geoAttempted, setGeoAttempted] = useState(0)
   const [geoLoading, setGeoLoading] = useState(false)
   const feedLoadingRef = useRef(false)
-  const [globalEvents, setGlobalEvents] = useState([])
-  const [eventsUpdatedAt, setEventsUpdatedAt] = useState(null)
+  const [cachedEvents] = useState(() => loadCachedGlobalEvents())
+  const [globalEvents, setGlobalEvents] = useState(cachedEvents?.events ?? [])
+  const [eventsUpdatedAt, setEventsUpdatedAt] = useState(cachedEvents?.updatedAt ?? null)
+  const [eventsStale, setEventsStale] = useState(cachedEvents?.stale ?? false)
   const [eventsError, setEventsError] = useState('')
   const [eventsLoading, setEventsLoading] = useState(false)
   const [showEarthquakes, setShowEarthquakes] = useState(true)
   const [selectedEventId, setSelectedEventId] = useState(null)
   const eventsLoadingRef = useRef(false)
-  const [newsArticles, setNewsArticles] = useState([])
-  const [newsUpdatedAt, setNewsUpdatedAt] = useState(null)
+  const [cachedNews] = useState(() => loadCachedGlobalNews())
+  const [newsArticles, setNewsArticles] = useState(cachedNews?.articles ?? [])
+  const [newsUpdatedAt, setNewsUpdatedAt] = useState(cachedNews?.updatedAt ?? null)
+  const [newsStale, setNewsStale] = useState(cachedNews?.stale ?? false)
   const [newsError, setNewsError] = useState('')
   const [newsLoading, setNewsLoading] = useState(false)
   const [showNews, setShowNews] = useState(true)
@@ -490,10 +552,12 @@ function App() {
       const result = await loadGlobalEvents()
       setGlobalEvents(result.events)
       setEventsUpdatedAt(result.updatedAt)
+      setEventsStale(false)
       setEventsError('')
     } catch (error) {
       console.error('Could not refresh the USGS global-events feed.', error)
       setEventsError(error instanceof Error ? error.message : 'Could not refresh global events.')
+      setEventsStale(true)
     } finally {
       eventsLoadingRef.current = false
       setEventsLoading(false)
@@ -508,10 +572,12 @@ function App() {
       const result = await loadGlobalNews()
       setNewsArticles(result.articles)
       setNewsUpdatedAt(result.updatedAt)
+      setNewsStale(false)
       setNewsError('')
     } catch (error) {
       console.error('Could not refresh the BBC World news feed.', error)
       setNewsError(error instanceof Error ? error.message : 'Could not refresh global news.')
+      setNewsStale(true)
     } finally {
       newsLoadingRef.current = false
       setNewsLoading(false)
@@ -717,7 +783,7 @@ function App() {
               <button className={`filter-chip event-filter ${showEarthquakes ? 'selected' : ''}`} aria-pressed={showEarthquakes} onClick={() => setShowEarthquakes((current) => !current)}><i className="event-legend-dot" />Earthquakes {eventsLoading ? '…' : globalEvents.length ? `${globalEvents.length}` : ''}</button>
               <button className={`filter-chip news-filter ${showNews ? 'selected' : ''}`} aria-pressed={showNews} onClick={() => setShowNews((current) => !current)}><i className="news-legend-dot" />World news {newsLoading ? '…' : newsArticles.length ? `${newsArticles.length}` : ''}</button>
               <span className="map-filter-spacer" />
-              <span className="map-updated">{newsUpdatedAt ? `News checked ${formatNewsTime(newsUpdatedAt)}` : newsLoading ? 'Loading world news…' : 'World news unavailable'}</span>
+              <span className="map-updated">{newsUpdatedAt ? `News checked ${formatNewsTime(newsUpdatedAt)}${newsStale ? ' · cached' : ''}` : newsLoading ? 'Loading world news…' : 'World news unavailable'}</span>
             </div>
             <div className="news-headline-strip" aria-label="Latest mapped world news">
               <div className="news-strip-heading"><span><i className="news-legend-dot" />WORLD NEWS</span><a href="#news-panel">All headlines ↓</a></div>
@@ -757,7 +823,7 @@ function App() {
             <div className="panel-heading events-heading">
               <div><h2 id="news-title">Major world news</h2><p>BBC World headlines · highlighted only when a location is identified in the story text</p></div>
               <div className="events-heading-actions">
-                <span>{newsUpdatedAt ? `Checked ${formatNewsTime(newsUpdatedAt)} UTC` : newsLoading ? 'Loading headlines…' : 'Feed unavailable'}</span>
+                <span>{newsUpdatedAt ? `${newsStale ? 'Cached' : 'Checked'} ${formatNewsTime(newsUpdatedAt)} UTC` : newsLoading ? 'Loading headlines…' : 'Feed unavailable'}</span>
                 <button onClick={refreshNews} disabled={newsLoading}>{newsLoading ? 'Checking…' : 'Refresh news'}</button>
               </div>
             </div>
@@ -785,7 +851,7 @@ function App() {
             <div className="panel-heading events-heading">
               <div><h2 id="events-title">Global events · earthquakes M4.5+</h2><p>USGS past-day feed · events are separate from cyber threat indicators</p></div>
               <div className="events-heading-actions">
-                <span>{eventsUpdatedAt ? `Feed updated ${formatEventTime(eventsUpdatedAt)} UTC` : eventsLoading ? 'Loading events…' : 'Feed unavailable'}</span>
+                <span>{eventsUpdatedAt ? `${eventsStale ? 'Cached · last update' : 'Feed updated'} ${formatEventTime(eventsUpdatedAt)} UTC` : eventsLoading ? 'Loading events…' : 'Feed unavailable'}</span>
                 <button onClick={refreshGlobalEvents} disabled={eventsLoading}>{eventsLoading ? 'Checking…' : 'Refresh events'}</button>
               </div>
             </div>
