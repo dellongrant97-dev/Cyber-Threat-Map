@@ -26,7 +26,7 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--bg); }
 button, input { font: inherit; }
 button { color: inherit; }
-button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 228px minmax(580px, 1fr) 310px; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 5; width: 228px; display: flex; flex-direction: column; padding: 24px 14px 13px; background: #0a0e10; border-right: 1px solid #1a2326; }
@@ -363,6 +363,13 @@ h1 > span { color: var(--green); }
 .incident-route b { color: #637271; font-weight: 400; }
 .incident-detail { display: flex; flex-direction: column; gap: 4px; margin-top: 3px; padding: 7px; border: 1px solid #273335; border-radius: 4px; background: #11181a; color: #98a6a2; font-size: 8px; }
 .incident-detail span:first-child { color: var(--green); font: 8px var(--mono); }
+.incident-detail b { color: #c4d0ca; font-weight: 500; }
+.incident-detail a { color: #9fe5ec; }
+.indicator-filters { display: grid; gap: 8px; padding: 10px 0; border-bottom: 1px solid #1c2628; }
+.indicator-filters label { display: grid; grid-template-columns: 105px minmax(0, 1fr); align-items: center; gap: 8px; color: #82908e; font-size: 8px; }
+.indicator-filters select { min-width: 0; padding: 6px 7px; border: 1px solid #283436; border-radius: 4px; background: #101719; color: #c0ccc6; font-size: 9px; }
+.indicator-filters select:disabled { cursor: not-allowed; opacity: .6; }
+.indicator-filters p { margin: 0; color: #768481; font-size: 8px; line-height: 1.5; }
 .indicator-list-footer { padding: 7px 0; color: #748281; font: 8px var(--mono); text-align: center; }
 .empty-activity { padding: 22px 8px; color: #81908e; font-size: 10px; text-align: center; }
 .all-incidents { display: flex; align-items: center; justify-content: center; height: 34px; margin: 5px 0 13px; gap: 7px; border: 1px solid #273235; border-radius: 4px; background: #111719; color: #b8c5bf; font-size: 9px; cursor: pointer; }
@@ -483,6 +490,7 @@ h1 > span { color: var(--green); }
   .activity-sidebar { display: block; padding: 14px; border-top: 1px solid #20292b; }
   .activity-header { padding-top: 0; }
   .activity-list { display: block; }
+  .indicator-filters label { grid-template-columns: 120px minmax(0, 1fr); }
   .all-incidents { width: 100%; }
   .sensor-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
   .sensor-row { gap: 6px; }

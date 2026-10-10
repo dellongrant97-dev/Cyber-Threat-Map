@@ -8,6 +8,7 @@ import {
 } from './threatIntel.js'
 import { globalEventsInfo, loadCachedGlobalEvents, loadGlobalEvents } from './globalEvents.js'
 import { globalNewsInfo, loadCachedGlobalNews, loadGlobalNews } from './globalNews.js'
+import { filterIndicators } from './indicatorFilters.js'
 
 const tabs = [
   { label: 'Overview', icon: 'grid', target: 'overview' },
@@ -478,6 +479,9 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
 function App() {
   const [activeTab, setActiveTab] = useState('Threat map')
   const [filter, setFilter] = useState('all')
+  const [indicatorCategory, setIndicatorCategory] = useState('all')
+  const [indicatorCountry, setIndicatorCountry] = useState('all')
+  const [snapshotWindow, setSnapshotWindow] = useState('all')
   const [selectedIp, setSelectedIp] = useState(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -636,18 +640,30 @@ function App() {
 
   const highCount = feed?.indicators.filter((indicator) => indicator.consensus >= 6).length ?? 0
   const mediumCount = feed ? feed.indicators.length - highCount : 0
+  const availableCountries = useMemo(
+    () => [...new Set(geoLocations.map((location) => location.country))].sort((first, second) => first.localeCompare(second)),
+    [geoLocations],
+  )
   const filteredIndicators = useMemo(() => {
     if (!feed) return []
-    const query = searchQuery.trim().toLowerCase()
-    return feed.indicators.filter((indicator) => {
-      if (filter === 'high' && indicator.consensus < 6) return false
-      if (filter === 'medium' && indicator.consensus >= 6) return false
-      if (!query) return true
-      const location = geoLocations.find((item) => item.ip === indicator.ip)
-      return [indicator.ip, location?.country, location?.countryCode, location?.city, location?.organization]
-        .some((value) => value?.toLowerCase().includes(query))
+    return filterIndicators({
+      indicators: feed.indicators,
+      locations: geoLocations,
+      confidence: filter,
+      category: indicatorCategory,
+      country: indicatorCountry,
+      snapshotWindow,
+      publishedAt: feed.publishedAt,
+      query: searchQuery,
     })
-  }, [feed, filter, geoLocations, searchQuery])
+  }, [feed, filter, geoLocations, indicatorCategory, indicatorCountry, snapshotWindow, searchQuery])
+
+  const listedIndicators = useMemo(() => {
+    const firstPage = filteredIndicators.slice(0, 50)
+    const selected = filteredIndicators.find((indicator) => indicator.ip === selectedIp)
+    if (selected && !firstPage.some((indicator) => indicator.ip === selectedIp)) firstPage.push(selected)
+    return firstPage
+  }, [filteredIndicators, selectedIp])
 
   const visibleLocations = useMemo(() => {
     const matches = new Set(filteredIndicators.map((indicator) => indicator.ip))
@@ -677,7 +693,9 @@ function App() {
 
   const selectIndicator = (ip) => {
     setSelectedIp(ip)
-    document.getElementById(`indicator-${ip}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    window.requestAnimationFrame(() => {
+      document.getElementById(`indicator-${ip}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
   }
 
   const selectNews = (article) => {
@@ -778,7 +796,7 @@ function App() {
             </div>
             <div className="map-filter-row">
               <div className="consensus-filter-group" role="group" aria-label="Filter indicators by source-list consensus">
-              {consensusFilters.map((option) => <button key={option.id} className={`filter-chip ${filter === option.id ? 'selected' : ''}`} onClick={() => setFilter(option.id)}>{option.id === 'high' ? <i className="confidence-dot high" /> : option.id === 'medium' ? <i className="confidence-dot medium" /> : <span className="filter-total">{feed ? formatNumber(filteredIndicators.length) : '—'}</span>}{option.label}</button>)}
+              {consensusFilters.map((option) => <button key={option.id} className={`filter-chip ${filter === option.id ? 'selected' : ''}`} aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.id === 'high' ? <i className="confidence-dot high" /> : option.id === 'medium' ? <i className="confidence-dot medium" /> : <span className="filter-total">{feed ? formatNumber(filteredIndicators.length) : '—'}</span>}{option.label}</button>)}
               </div>
               <button className={`filter-chip event-filter ${showEarthquakes ? 'selected' : ''}`} aria-pressed={showEarthquakes} onClick={() => setShowEarthquakes((current) => !current)}><i className="event-legend-dot" />Earthquakes {eventsLoading ? '…' : globalEvents.length ? `${globalEvents.length}` : ''}</button>
               <button className={`filter-chip news-filter ${showNews ? 'selected' : ''}`} aria-pressed={showNews} onClick={() => setShowNews((current) => !current)}><i className="news-legend-dot" />World news {newsLoading ? '…' : newsArticles.length ? `${newsArticles.length}` : ''}</button>
@@ -898,8 +916,31 @@ function App() {
           <p><span className={feedError ? 'status-dot status-warning' : 'live-dot'} />{feedLoading ? 'Checking IPsum feed' : feed?.stale ? 'Cached public intelligence' : 'Public blocklist intelligence'}</p>
         </div>
         <div className="activity-summary"><span><i className="confidence-dot high" /><b>{formatNumber(highCount)}</b> 6+ lists</span><span><i className="confidence-dot medium" /><b>{formatNumber(mediumCount)}</b> 3-5 lists</span></div>
+        <div className="indicator-filters" aria-label="Threat indicator filters">
+          <label>Category
+            <select value={indicatorCategory} onChange={(event) => setIndicatorCategory(event.target.value)}>
+              <option value="all">All categories</option>
+              <option value="ip-reputation">Suspicious IP reputation</option>
+            </select>
+          </label>
+          <label>Approximate country
+            <select value={indicatorCountry} onChange={(event) => setIndicatorCountry(event.target.value)}>
+              <option value="all">All countries</option>
+              <option value="unavailable">Location unavailable</option>
+              {availableCountries.map((country) => <option key={country} value={country}>{country}</option>)}
+            </select>
+          </label>
+          <label>Feed snapshot published
+            <select value={snapshotWindow} onChange={(event) => setSnapshotWindow(event.target.value)}>
+              <option value="all">Any date</option>
+              <option value="7d">Within 7 days</option>
+              <option value="30d">Within 30 days</option>
+            </select>
+          </label>
+          <p>IPsum gives each indicator the same feed publication date; it does not provide per-IP first-seen or last-seen dates. Country filtering covers only indicators with successful GeoIP results (up to 16 sampled IPs).</p>
+        </div>
         <div className="activity-list">
-          {filteredIndicators.length ? filteredIndicators.slice(0, 50).map((indicator) => {
+          {filteredIndicators.length ? listedIndicators.map((indicator) => {
             const location = geoLocations.find((item) => item.ip === indicator.ip)
             return (
               <button className={`incident ${selectedIp === indicator.ip ? 'incident-selected' : ''}`} id={`indicator-${indicator.ip}`} key={indicator.ip} onClick={() => setSelectedIp(selectedIp === indicator.ip ? null : indicator.ip)} aria-expanded={selectedIp === indicator.ip}>
@@ -908,13 +949,22 @@ function App() {
                   <span className="incident-meta"><span className={`severity-text ${indicator.consensus >= 6 ? 'high' : 'medium'}`}>{indicator.consensus}+ SOURCE MATCH</span><span className="incident-time">IP REPUTATION</span></span>
                   <strong>{indicator.ip}</strong>
                   <span className="incident-route"><span>{location ? `${location.city ? `${location.city}, ` : ''}${location.country}` : 'Approximate location unavailable'}</span></span>
-                  {selectedIp === indicator.ip && <span className="incident-detail"><span>{indicator.consensus}+ independent public blocklists</span><span>{location?.organization ? `Network: ${location.organization}. ` : ''}IP geolocation indicates hosting location, not an attacker or event origin.</span></span>}
+                  {selectedIp === indicator.ip && <span className="incident-detail">
+                    <span><b>Category</b> Suspicious IP reputation</span>
+                    <span><b>Source</b> IPsum public blocklists</span>
+                    <span><b>Confidence</b> {indicator.consensus}+ independent source lists</span>
+                    <span><b>Approximate location</b> {location ? `${location.city ? `${location.city}, ` : ''}${location.country}` : 'Unavailable for this indicator'}</span>
+                    {location?.organization && <span><b>Network</b> {location.organization}</span>}
+                    <span><b>Feed snapshot</b> Published {formatDate(feed?.publishedAt)} · no per-IP observation time is available</span>
+                    <span><b>Last checked</b> {formatDate(feed?.checkedAt)}</span>
+                    <span>Reputation intelligence is not proof of an active attack; GeoIP is not an attack origin.</span>
+                  </span>}
                 </span>
               </button>
             )
-          }) : <div className="empty-activity">{feedLoading ? 'Loading the public threat feed…' : feedError && !feed ? 'Threat indicators are unavailable until the feed can be loaded.' : searchQuery ? 'No indicators match your search.' : 'No indicators in this confidence tier.'}</div>}
+          }) : <div className="empty-activity">{feedLoading ? 'Loading the public threat feed…' : feedError && !feed ? 'Threat indicators are unavailable until the feed can be loaded.' : indicatorCountry === 'unavailable' ? 'No indicators without an approximate location match your filters.' : indicatorCountry !== 'all' ? `No sampled indicators match ${indicatorCountry}.` : snapshotWindow !== 'all' ? 'No indicators match the selected feed snapshot date.' : searchQuery ? 'No indicators match your search.' : 'No indicators in this confidence tier.'}</div>}
         </div>
-        <div className="indicator-list-footer">{filteredIndicators.length > 50 ? `Showing 50 of ${formatNumber(filteredIndicators.length)} matching indicators.` : `${formatNumber(filteredIndicators.length)} matching indicators.`}</div>
+        <div className="indicator-list-footer">{filteredIndicators.length > 50 ? `Showing first 50${listedIndicators.length > 50 ? ' plus selected indicator' : ''} of ${formatNumber(filteredIndicators.length)} matches.` : `${formatNumber(filteredIndicators.length)} matching indicators.`}</div>
         <div className="activity-divider" />
         <div className="sensor-heading"><div><h3>Sampled IP locations</h3><p>Approximate GeoIP, not sensors</p></div><button onClick={() => feed && refreshLocations(feed.indicators, feed.sha)} disabled={geoLoading || !feed} aria-label="Refresh sampled IP locations">{geoLoading ? '…' : '↻'}</button></div>
         <div className="sensor-list">
