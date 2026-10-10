@@ -6,6 +6,7 @@ const CACHE_KEY = 'sentinel-global-events-v1'
 
 function isValidEventCache(cache) {
   return Number.isFinite(cache?.updatedAt)
+    && (cache.retrievedAt === undefined || Number.isFinite(cache.retrievedAt))
     && Array.isArray(cache.events)
     && cache.events.every((event) => (
       typeof event.id === 'string'
@@ -19,6 +20,17 @@ function isValidEventCache(cache) {
       && event.longitude <= 180
       && typeof event.place === 'string'
     ))
+}
+
+function getSafeUsGSEventUrl(value) {
+    if (typeof value !== 'string') return ''
+    try {
+      const url = new URL(value)
+      if (url.protocol !== 'https:' || url.hostname !== 'earthquake.usgs.gov' || url.username || url.password) return ''
+      return url.href
+    } catch {
+      return ''
+    }
 }
 
 export function loadCachedGlobalEvents() {
@@ -57,7 +69,7 @@ export function normalizeGlobalEvents(feed) {
       latitude,
       longitude,
       depth: Number.isFinite(depth) ? depth : null,
-      url: typeof properties.url === 'string' ? properties.url : '',
+      url: getSafeUsGSEventUrl(properties.url),
     }]
   }).sort((first, second) => second.occurredAt - first.occurredAt)
 
@@ -73,7 +85,10 @@ export async function loadGlobalEvents() {
       headers: { Accept: 'application/geo+json, application/json' },
     })
     if (!response.ok) throw new Error(`USGS event feed returned HTTP ${response.status}.`)
-    const result = normalizeGlobalEvents(await response.json())
+    const result = {
+      ...normalizeGlobalEvents(await response.json()),
+      retrievedAt: Date.now(),
+    }
     writeJsonCache(CACHE_KEY, result)
     return result
   } catch (error) {
@@ -85,6 +100,7 @@ export async function loadGlobalEvents() {
 }
 
 export const globalEventsInfo = {
+  name: 'USGS Earthquake Hazards Program',
   source: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson',
   refreshMinutes: 5,
 }

@@ -80,6 +80,17 @@ function cleanText(value) {
   return document.body.textContent.replace(/\s+/g, ' ').trim()
 }
 
+function getSafeBbcStoryUrl(value) {
+  if (typeof value !== 'string') return ''
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.hostname !== 'www.bbc.co.uk' || url.username || url.password) return ''
+    return url.href
+  } catch {
+    return ''
+  }
+}
+
 function isValidNewsCache(cache) {
   return Number.isFinite(cache?.updatedAt)
     && Array.isArray(cache.articles)
@@ -87,8 +98,7 @@ function isValidNewsCache(cache) {
       typeof article.id === 'string'
       && typeof article.title === 'string'
       && typeof article.summary === 'string'
-      && typeof article.url === 'string'
-      && article.url.startsWith('https://www.bbc.co.uk/')
+      && getSafeBbcStoryUrl(article.url) === article.url
       && Number.isFinite(article.publishedAt)
       && (!article.location || (
         typeof article.location.name === 'string'
@@ -112,7 +122,7 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
   const articles = items.flatMap((item) => {
     const title = textCleaner(item?.title)
     const summary = textCleaner(item?.description)
-    const link = typeof item?.link === 'string' ? item.link : ''
+    const link = getSafeBbcStoryUrl(item?.link)
     const rawPublishedAt = item?.pubDate
     const explicitTimezone = typeof rawPublishedAt === 'string' && /(?:Z|GMT|UTC|[+-]\d{2}:?\d{2})$/i.test(rawPublishedAt.trim())
     const publishedAt = explicitTimezone
@@ -120,7 +130,7 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
       : new Date(`${rawPublishedAt} UTC`).getTime()
     if (
       !title
-      || !link.startsWith('https://www.bbc.co.uk/')
+      || !link
       || !Number.isFinite(publishedAt)
       || publishedAt > now + 60 * 60 * 1000
       || publishedAt < now - NEWS_WINDOW_MS
@@ -172,6 +182,8 @@ export async function loadGlobalNews() {
 }
 
 export const globalNewsInfo = {
+  name: 'BBC World (via rss2json converter)',
   source: 'https://www.bbc.co.uk/news/world',
+  converter: RSS_CONVERTER,
   refreshMinutes: NEWS_REFRESH_MINUTES,
 }

@@ -39,3 +39,21 @@ test('normalizeGlobalEvents rejects malformed feed envelopes', () => {
   assert.throws(() => normalizeGlobalEvents({ features: [] }), /invalid data/)
   assert.throws(() => normalizeGlobalEvents(null), /invalid data/)
 })
+
+test('normalizeGlobalEvents only keeps safe HTTPS links to the official USGS host', () => {
+  const result = normalizeGlobalEvents({
+    metadata: { generated: 1700000000000 },
+    features: [
+      validFeature('safe', 1699999999000),
+      validFeature('javascript', 1699999999500, {
+        properties: { mag: 5.1, time: 1699999999500, place: 'Test location', url: 'javascript:alert(1)' },
+      }),
+      validFeature('lookalike', 1699999999800, {
+        properties: { mag: 5.1, time: 1699999999800, place: 'Test location', url: 'https://earthquake.usgs.gov.attacker.example/event' },
+      }),
+    ],
+  })
+  assert.equal(result.events.find((event) => event.id === 'safe').url, 'https://earthquake.usgs.gov/safe')
+  assert.equal(result.events.find((event) => event.id === 'javascript').url, '')
+  assert.equal(result.events.find((event) => event.id === 'lookalike').url, '')
+})

@@ -41,6 +41,17 @@ test('normalizeGlobalNewsItems filters unsafe links, invalid dates, future items
   assert.deepEqual(articles.map((article) => article.title), ['Allowed BBC article'])
 })
 
+test('normalizeGlobalNewsItems rejects credentialed and lookalike BBC links', () => {
+  const now = Date.parse('2026-10-10T12:00:00.000Z')
+  const articles = normalizeGlobalNewsItems([
+    item('Credentialed URL', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.co.uk@attacker.example/story' }),
+    item('Lookalike host', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.co.uk.attacker.example/story' }),
+    item('HTTP link', '2026-10-10T11:00:00Z', { link: 'http://www.bbc.co.uk/story' }),
+    item('Valid BBC link', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.co.uk/story' }),
+  ], { now, textCleaner: (value) => value })
+  assert.deepEqual(articles.map((article) => article.url), ['https://www.bbc.co.uk/story'])
+})
+
 test('normalizeGlobalNewsItems limits results and rejects malformed feed data', () => {
   const items = Array.from({ length: 35 }, (_, index) => (
     item(`Story ${index}`, new Date(now - index * 60_000).toISOString())
