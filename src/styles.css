@@ -144,6 +144,10 @@ h1 > span { color: var(--green); }
 .panel-heading p { margin: 4px 0 0; color: #778486; font-size: 9px; }
 .map-heading-actions { display: flex; align-items: center; gap: 12px; }
 .map-heading-actions { position: relative; }
+.map-view-toggle { display: flex; padding: 2px; gap: 2px; border: 1px solid #293535; border-radius: 4px; background: #0a1011; }
+.map-view-toggle button { min-height: 22px; padding: 0 7px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #879491; font-size: 8px; white-space: nowrap; cursor: pointer; }
+.map-view-toggle button:hover { color: #dce7e1; }
+.map-view-toggle button.selected { border-color: #334435; background: #18221a; color: #c8efb5; }
 .live-badge { display: flex; align-items: center; gap: 6px; padding: 4px 7px; border: 1px solid #2e4732; border-radius: 3px; color: #b4ed92; background: #142019; font: 9px var(--mono); letter-spacing: .5px; }
 .live-badge .live-dot { width: 5px; height: 5px; }
 .feed-badge { display: flex; align-items: center; gap: 6px; padding: 4px 7px; border: 1px solid #2e4732; border-radius: 3px; color: #b4ed92; background: #142019; font: 8px var(--mono); letter-spacing: .35px; white-space: nowrap; }
@@ -193,6 +197,9 @@ h1 > span { color: var(--green); }
 .map-stage { position: relative; height: clamp(270px, 31vw, 400px); overflow: hidden; background: radial-gradient(ellipse at 49% 44%, #071812 0%, #07110e 46%, #080f0d 80%); }
 .map-empty { position: absolute; inset: 0; display: grid; padding: 24px; place-items: center; color: #8d9b96; font-size: 11px; text-align: center; }
 .world-map { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.globe-map { position: absolute; inset: 0; display: block; width: 100%; height: 100%; outline: none; cursor: grab; touch-action: none; }
+.globe-map:focus-visible { box-shadow: inset 0 0 0 2px #a8ff74; }
+.globe-map.globe-dragging { cursor: grabbing; }
 .graticules path, .graticules ellipse { fill: none; stroke: #17452f; stroke-width: .65; opacity: .48; }
 .continents path { fill: url(#land-dots); stroke: none; opacity: .96; filter: drop-shadow(0 0 1.5px #00f28c5c); }
 .routes path { fill: none; stroke-width: 1.1; stroke-dasharray: 3 5; opacity: .82; }
@@ -453,6 +460,8 @@ h1 > span { color: var(--green); }
   .stat-value { font-size: 22px; }
   .sparkline { right: 7px; bottom: 13px; width: 47px; opacity: .64; }
   .map-heading { padding: 12px 11px 8px; }
+  .map-heading-actions { gap: 5px; }
+  .map-view-toggle button { padding-inline: 5px; font-size: 7px; }
   .map-filter-row { overflow-x: auto; padding-inline: 9px; }
   .filter-chip { flex: none; }
   .consensus-filter-group { flex: none; }

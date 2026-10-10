@@ -2,6 +2,10 @@
 
 Sentinel is a responsive cybersecurity dashboard with a high-resolution, Natural Earth 1:50m SVG world map and public IP reputation intelligence. Search, confidence filters, map-marker selection, CSV export, feed refresh, source links, and approximate IP geolocation are driven by fetched data.
 
+## Map views
+
+Use **2D Map** for the flat world projection or **3D Globe** for a continuously rotating, dot-rendered globe. Drag the globe to rotate it manually; the same threat, earthquake, and news layers are available in both views. The globe uses the existing Natural Earth geometry and Canvas, with no additional rendering dependency. Reduced-motion preferences stop its automatic rotation.
+
 ## Data accuracy and freshness
 
 The dashboard reads [IPsum](https://github.com/stamparm/ipsum), which combines more than 30 public IP blocklists and updates its published snapshot about once every 24 hours. The browser checks the publisher every 15 minutes and downloads a new snapshot when its version changes; checking more frequently does not make the upstream feed more current.

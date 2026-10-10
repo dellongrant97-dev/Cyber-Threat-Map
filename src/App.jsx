@@ -184,6 +184,239 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
   )
 }
 
+function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }) {
+  const canvasRef = useRef(null)
+  const sceneRef = useRef(null)
+  sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return undefined
+
+    const landPath = new Path2D(landShapes)
+    const landDots = []
+    for (let latitude = -88; latitude <= 88; latitude += 2.5) {
+      for (let longitude = -178; longitude <= 178; longitude += 2.5) {
+        const mapX = ((longitude + 180) / 360) * 1000
+        const mapY = ((90 - latitude) / 180) * 500
+        if (context.isPointInPath(landPath, mapX, mapY)) landDots.push({ latitude, longitude })
+      }
+    }
+
+    let width = 0
+    let height = 0
+    let frame = 0
+    let lastTime = 0
+    let rotation = -0.25
+    let dragX = null
+    let hitTargets = []
+    let keyboardIndex = 0
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      const bounds = entry.contentRect
+      const ratio = Math.min(window.devicePixelRatio || 1, 2)
+      width = bounds.width
+      height = bounds.height
+      canvas.width = Math.max(1, Math.round(width * ratio))
+      canvas.height = Math.max(1, Math.round(height * ratio))
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    })
+    resizeObserver.observe(canvas)
+
+    const toSphere = (latitude, longitude, centerX, centerY, radius, turn) => {
+      const lat = latitude * Math.PI / 180
+      const lon = (longitude * Math.PI / 180) + turn
+      const depth = Math.cos(lat) * Math.cos(lon)
+      return {
+        x: centerX + radius * Math.cos(lat) * Math.sin(lon),
+        y: centerY - radius * Math.sin(lat),
+        depth,
+      }
+    }
+
+    const draw = (time) => {
+      const elapsed = lastTime ? Math.min(time - lastTime, 40) : 0
+      lastTime = time
+      if (!reducedMotion.matches && dragX === null) rotation += elapsed * 0.000035
+      const scene = sceneRef.current
+      const ratio = Math.min(window.devicePixelRatio || 1, 2)
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      context.clearRect(0, 0, width, height)
+      const radius = Math.max(48, Math.min(width * 0.36, height * 0.44))
+      const centerX = width / 2
+      const centerY = height / 2
+      const sphere = context.createRadialGradient(centerX - radius * 0.35, centerY - radius * 0.4, radius * 0.08, centerX, centerY, radius * 1.1)
+      sphere.addColorStop(0, '#10261d')
+      sphere.addColorStop(0.7, '#09140f')
+      sphere.addColorStop(1, '#030807')
+      context.beginPath()
+      context.arc(centerX, centerY, radius, 0, Math.PI * 2)
+      context.fillStyle = sphere
+      context.fill()
+      context.save()
+      context.beginPath()
+      context.arc(centerX, centerY, radius, 0, Math.PI * 2)
+      context.clip()
+
+      context.strokeStyle = 'rgba(39, 111, 75, .38)'
+      context.lineWidth = 0.7
+      for (const latitude of [-60, -30, 0, 30, 60]) {
+        context.beginPath()
+        let drawing = false
+        for (let longitude = -180; longitude <= 180; longitude += 3) {
+          const point = toSphere(latitude, longitude, centerX, centerY, radius, rotation)
+          if (point.depth > 0) {
+            if (drawing) context.lineTo(point.x, point.y)
+            else context.moveTo(point.x, point.y)
+            drawing = true
+          } else drawing = false
+        }
+        context.stroke()
+      }
+      for (const longitude of [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180]) {
+        context.beginPath()
+        let drawing = false
+        for (let latitude = -90; latitude <= 90; latitude += 2) {
+          const point = toSphere(latitude, longitude, centerX, centerY, radius, rotation)
+          if (point.depth > 0) {
+            if (drawing) context.lineTo(point.x, point.y)
+            else context.moveTo(point.x, point.y)
+            drawing = true
+          } else drawing = false
+        }
+        context.stroke()
+      }
+
+      for (const dot of landDots) {
+        const point = toSphere(dot.latitude, dot.longitude, centerX, centerY, radius, rotation)
+        if (point.depth <= 0) continue
+        context.globalAlpha = 0.55 + point.depth * 0.4
+        context.fillStyle = '#00f28c'
+        context.fillRect(point.x, point.y, 1.35, 1.35)
+      }
+      context.globalAlpha = 1
+
+      hitTargets = []
+      const drawMarker = (location, color, size, selected, action, label) => {
+        const point = toSphere(location.latitude, location.longitude, centerX, centerY, radius, rotation)
+        if (point.depth <= 0) return
+        const markerSize = size * (0.72 + point.depth * 0.28)
+        context.beginPath()
+        context.arc(point.x, point.y, markerSize + (selected ? 4 : 2), 0, Math.PI * 2)
+        context.fillStyle = `${color}33`
+        context.fill()
+        context.beginPath()
+        context.arc(point.x, point.y, markerSize, 0, Math.PI * 2)
+        context.fillStyle = color
+        context.strokeStyle = selected ? '#ffffff' : '#08110d'
+        context.lineWidth = selected ? 1.8 : 1
+        context.fill()
+        context.stroke()
+        const targetIndex = hitTargets.length
+        hitTargets.push({ x: point.x, y: point.y, radius: Math.max(markerSize + 5, 8), action, label })
+        if (document.activeElement === canvas && targetIndex === keyboardIndex) {
+          context.beginPath()
+          context.arc(point.x, point.y, markerSize + 6, 0, Math.PI * 2)
+          context.strokeStyle = '#ffffff'
+          context.lineWidth = 1
+          context.stroke()
+        }
+      }
+
+      for (const indicator of scene.indicators) {
+        drawMarker(indicator, indicator.consensus >= 6 ? '#ffae62' : '#66d7c9', 3.3, scene.selectedIp === indicator.ip, () => scene.onSelect(indicator.ip), `${indicator.ip}, approximate location`)
+      }
+      if (scene.showEvents) {
+        for (const event of scene.events) {
+          drawMarker(event, '#61d7e2', 4.1, scene.selectedEventId === event.id, () => scene.onSelectEvent(event.id), `Magnitude ${event.magnitude.toFixed(1)} earthquake, ${event.place}`)
+        }
+      }
+      if (scene.showNews) {
+        for (const article of scene.news) {
+          if (article.location) drawMarker(article.location, '#cf9bff', article.location.precision === 'city' ? 4 : 5, scene.selectedNewsId === article.id, () => scene.onSelectNews(article.id), `${article.location.name}: ${article.title}`)
+        }
+      }
+      context.restore()
+      context.beginPath()
+      context.arc(centerX, centerY, radius, 0, Math.PI * 2)
+      context.strokeStyle = 'rgba(104, 228, 164, .55)'
+      context.lineWidth = 1
+      context.stroke()
+      context.fillStyle = '#75888a'
+      context.font = '8px monospace'
+      context.fillText('3D GLOBE · DRAG TO ROTATE', 16, 22)
+      frame = window.requestAnimationFrame(draw)
+    }
+
+    const pointerDown = (event) => {
+      dragX = event.clientX
+      canvas.setPointerCapture(event.pointerId)
+      canvas.classList.add('globe-dragging')
+    }
+    const pointerMove = (event) => {
+      if (dragX !== null) {
+        rotation += (event.clientX - dragX) / Math.max(48, Math.min(width * 0.36, height * 0.44))
+        dragX = event.clientX
+      }
+    }
+    const pointerUp = () => {
+      dragX = null
+      canvas.classList.remove('globe-dragging')
+    }
+    const pointerClick = (event) => {
+      if (canvas.dataset.dragged === 'true') {
+        canvas.dataset.dragged = 'false'
+        return
+      }
+      const bounds = canvas.getBoundingClientRect()
+      const x = event.clientX - bounds.left
+      const y = event.clientY - bounds.top
+      const target = hitTargets.find((item) => Math.hypot(item.x - x, item.y - y) <= item.radius)
+      target?.action()
+    }
+    const pointerMoveWithDrag = (event) => {
+      if (dragX !== null && Math.abs(event.clientX - dragX) > 1) canvas.dataset.dragged = 'true'
+      pointerMove(event)
+    }
+    const keyDown = (event) => {
+      if (!hitTargets.length) return
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault()
+        keyboardIndex = (keyboardIndex + 1) % hitTargets.length
+        canvas.setAttribute('aria-label', `Rotating 3D globe. Selected marker: ${hitTargets[keyboardIndex].label}. Press Enter to select; use arrow keys to cycle markers.`)
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        keyboardIndex = (keyboardIndex - 1 + hitTargets.length) % hitTargets.length
+        canvas.setAttribute('aria-label', `Rotating 3D globe. Selected marker: ${hitTargets[keyboardIndex].label}. Press Enter to select; use arrow keys to cycle markers.`)
+      } else if (event.key === 'Enter') {
+        event.preventDefault()
+        hitTargets[keyboardIndex % hitTargets.length]?.action()
+      }
+    }
+    canvas.addEventListener('pointerdown', pointerDown)
+    canvas.addEventListener('pointermove', pointerMoveWithDrag)
+    canvas.addEventListener('pointerup', pointerUp)
+    canvas.addEventListener('pointercancel', pointerUp)
+    canvas.addEventListener('click', pointerClick)
+    canvas.addEventListener('keydown', keyDown)
+    frame = window.requestAnimationFrame(draw)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      resizeObserver.disconnect()
+      canvas.removeEventListener('pointerdown', pointerDown)
+      canvas.removeEventListener('pointermove', pointerMoveWithDrag)
+      canvas.removeEventListener('pointerup', pointerUp)
+      canvas.removeEventListener('pointercancel', pointerUp)
+      canvas.removeEventListener('click', pointerClick)
+      canvas.removeEventListener('keydown', keyDown)
+    }
+  }, [])
+
+  return <canvas ref={canvasRef} className="globe-map" role="application" tabIndex="0" aria-label="Rotating 3D globe. Drag to rotate; use arrow keys to cycle markers and Enter to select." aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter" />
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('Threat map')
   const [filter, setFilter] = useState('all')
@@ -213,6 +446,7 @@ function App() {
   const [newsLoading, setNewsLoading] = useState(false)
   const [showNews, setShowNews] = useState(true)
   const [selectedNewsId, setSelectedNewsId] = useState(null)
+  const [mapView, setMapView] = useState('2d')
   const newsLoadingRef = useRef(false)
 
   const refreshFeed = useCallback(async () => {
@@ -468,6 +702,10 @@ function App() {
               <div><h2>Threat intelligence &amp; global events</h2><p>Separate layers: approximate IP hosting locations, news areas, and USGS earthquakes</p></div>
               <div className="map-heading-actions">
                 <div className={`feed-badge ${feed?.stale || feedError ? 'badge-stale' : ''}`}><span className={feedError ? 'status-dot status-warning' : 'live-dot'} />{feedLoading ? 'CHECKING' : feed?.stale ? 'CACHED' : 'PUBLIC FEED'}</div>
+                <div className="map-view-toggle" role="group" aria-label="Threat map view">
+                  <button className={mapView === '2d' ? 'selected' : ''} aria-pressed={mapView === '2d'} onClick={() => setMapView('2d')}>2D Map</button>
+                  <button className={mapView === '3d' ? 'selected' : ''} aria-pressed={mapView === '3d'} onClick={() => setMapView('3d')}>3D Globe</button>
+                </div>
                 <button className="map-menu" aria-label="Threat intelligence source options" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>···</button>
                 {sourceOpen && <div className="map-options"><strong>Intelligence sources</strong><a href={threatFeedInfo.repository} target="_blank" rel="noreferrer">IPsum · public blocklists <Icon name="arrow" size={12} /></a><a href={threatFeedInfo.geolocationProvider} target="_blank" rel="noreferrer">ipapi.co · IP GeoIP <Icon name="arrow" size={12} /></a><button onClick={exportIndicators}>Export filtered indicators (.csv)</button><span>Public indicator data can be stale and may contain false positives.</span></div>}
               </div>
@@ -511,7 +749,7 @@ function App() {
                 );
               })() : <span className="news-strip-empty">{newsLoading ? 'Loading mapped headlines…' : 'No headlines with confidently matched locations are available.'}</span>}
             </div>
-            <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
+            <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? mapView === '3d' ? <GlobeMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
             <div className="map-footer"><div className="legend"><span className="legend-title">MAP KEY</span><span><i className="confidence-dot high" /> 6+ source lists</span><span><i className="confidence-dot medium" /> 3-5 source lists</span><span><i className="event-legend-dot" /> USGS earthquake</span><span><i className="news-legend-dot" /> BBC news area</span></div><span className="map-disclaimer">News areas are approximate headline place matches.</span></div>
           </section>
 
