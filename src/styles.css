@@ -539,8 +539,8 @@ h1 > span { color: var(--green); }
 .activity-summary { display: flex; align-items: center; justify-content: space-between; min-height: 39px; padding: 0 8px; border: 1px solid #202a2c; border-radius: 5px; background: #0f1517; }
 .activity-summary > span { display: flex; align-items: center; gap: 5px; color: #879492; font-size: 8px; }
 .activity-summary b { color: #d4ddda; font: 10px var(--mono); }
-.activity-list { overflow-y: auto; min-height: 0; }
-.incident { position: relative; display: flex; width: 100%; padding: 13px 1px 12px; gap: 10px; border: 0; border-bottom: 1px solid #1c2628; background: transparent; text-align: left; cursor: pointer; }
+.activity-list { display: flex; flex-direction: column; gap: 7px; overflow-y: auto; min-height: 0; }
+.incident { position: relative; display: flex; width: 100%; flex: none; padding: 10px 8px; gap: 10px; border: 1px solid #1c2628; border-radius: 6px; background: #0d1214; text-align: left; cursor: pointer; }
 .incident:hover, .incident-selected { background: linear-gradient(90deg, #101718, transparent); }
 .incident-indicator { position: relative; display: grid; width: 25px; height: 25px; flex: none; place-items: center; border: 1px solid #442a2d; border-radius: 6px; background: #281a1d; }
 .incident-indicator > span { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 9px #ff647780; }
@@ -570,11 +570,11 @@ h1 > span { color: var(--green); }
 .indicator-filters select { min-width: 0; padding: 6px 7px; border: 1px solid #283436; border-radius: 4px; background: #101719; color: #c0ccc6; font-size: 9px; }
 .indicator-filters select:disabled { cursor: not-allowed; opacity: .6; }
 .indicator-filters p { margin: 0; color: #768481; font-size: 8px; line-height: 1.5; }
-.indicator-list-footer { padding: 7px 0; color: #748281; font: 8px var(--mono); text-align: center; }
+.indicator-list-footer { display: block; flex: none; min-height: 32px; box-sizing: border-box; margin: 0; padding: 8px 6px; border-bottom: 1px solid #1c2628; color: #82908e; font: 8px/1.5 var(--mono); overflow-wrap: anywhere; text-align: center; }
 .empty-activity { padding: 22px 8px; color: #81908e; font-size: 10px; text-align: center; }
 .all-incidents { display: flex; align-items: center; justify-content: center; height: 34px; margin: 5px 0 13px; gap: 7px; border: 1px solid #273235; border-radius: 4px; background: #111719; color: #b8c5bf; font-size: 9px; cursor: pointer; }
 .all-incidents:hover { border-color: #566250; color: var(--green); }
-.activity-divider { height: 1px; flex: none; background: #202a2b; }
+.activity-divider { height: 1px; flex: none; margin: 8px 0 0; background: #202a2b; }
 .sensor-heading { display: flex; align-items: center; justify-content: space-between; margin: 14px 1px 6px; }
 .sensor-heading h3 { margin: 0; color: #d6dfdc; font: 600 11px var(--display); }
 .sensor-heading p { margin: 4px 0 0; color: #758281; font-size: 8px; }
@@ -637,7 +637,7 @@ h1 > span { color: var(--green); }
   .activity-sidebar { position: static; width: auto; grid-column: 2; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; padding: 15px 20px; border-top: 1px solid #20292b; border-left: 0; }
   .activity-header, .activity-summary, .activity-list, .all-incidents, .activity-divider, .activity-footer { grid-column: 1 / -1; }
   .activity-header { padding-top: 0; }
-  .activity-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+  .activity-list { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 18px; }
   .activity-divider { margin-top: 8px; }
   .sensor-heading, .sensor-list, .sensor-foot { grid-column: 1 / -1; }
   .sensor-list { grid-template-columns: 1fr 1fr; column-gap: 18px; }
@@ -715,6 +715,7 @@ h1 > span { color: var(--green); }
   .activity-sidebar { display: block; padding: 14px; border-top: 1px solid #20292b; }
   .activity-header { padding-top: 0; }
   .activity-list { display: block; }
+  .incident + .incident { margin-top: 7px; }
   .indicator-filters label { grid-template-columns: 120px minmax(0, 1fr); }
   .all-incidents { width: 100%; }
   .sensor-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
