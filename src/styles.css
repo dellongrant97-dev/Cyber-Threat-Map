@@ -539,8 +539,8 @@ h1 > span { color: var(--green); }
 .activity-summary { display: flex; align-items: center; justify-content: space-between; min-height: 39px; padding: 0 8px; border: 1px solid #202a2c; border-radius: 5px; background: #0f1517; }
 .activity-summary > span { display: flex; align-items: center; gap: 5px; color: #879492; font-size: 8px; }
 .activity-summary b { color: #d4ddda; font: 10px var(--mono); }
-.activity-list { overflow-y: auto; min-height: 0; }
-.incident { position: relative; display: flex; width: 100%; padding: 13px 1px 12px; gap: 10px; border: 0; border-bottom: 1px solid #1c2628; background: transparent; text-align: left; cursor: pointer; }
+.activity-list { display: flex; flex-direction: column; gap: 7px; overflow-y: auto; min-height: 0; }
+.incident { position: relative; display: flex; width: 100%; padding: 10px 8px; gap: 10px; border: 1px solid #1c2628; border-radius: 6px; background: #0d1214; text-align: left; cursor: pointer; }
 .incident:hover, .incident-selected { background: linear-gradient(90deg, #101718, transparent); }
 .incident-indicator { position: relative; display: grid; width: 25px; height: 25px; flex: none; place-items: center; border: 1px solid #442a2d; border-radius: 6px; background: #281a1d; }
 .incident-indicator > span { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 9px #ff647780; }
@@ -637,7 +637,7 @@ h1 > span { color: var(--green); }
   .activity-sidebar { position: static; width: auto; grid-column: 2; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; padding: 15px 20px; border-top: 1px solid #20292b; border-left: 0; }
   .activity-header, .activity-summary, .activity-list, .all-incidents, .activity-divider, .activity-footer { grid-column: 1 / -1; }
   .activity-header { padding-top: 0; }
-  .activity-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+  .activity-list { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 18px; }
   .activity-divider { margin-top: 8px; }
   .sensor-heading, .sensor-list, .sensor-foot { grid-column: 1 / -1; }
   .sensor-list { grid-template-columns: 1fr 1fr; column-gap: 18px; }
@@ -715,6 +715,7 @@ h1 > span { color: var(--green); }
   .activity-sidebar { display: block; padding: 14px; border-top: 1px solid #20292b; }
   .activity-header { padding-top: 0; }
   .activity-list { display: block; }
+  .incident + .incident { margin-top: 7px; }
   .indicator-filters label { grid-template-columns: 120px minmax(0, 1fr); }
   .all-incidents { width: 100%; }
   .sensor-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
