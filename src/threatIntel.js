@@ -1,10 +1,13 @@
 import { readJsonCache, writeJsonCache } from './localCache.js'
+import { logClientError } from './clientLog.js'
+import { createSnapshotActivity, ensureSnapshotActivity, isValidSnapshotActivity } from './threatActivity.js'
 
 const FEED_REPOSITORY = 'stamparm/ipsum'
 const FEED_COMMIT_URL = `https://api.github.com/repos/${FEED_REPOSITORY}/commits?path=levels/6.txt&per_page=1`
 const RAW_REPOSITORY_URL = `https://raw.githubusercontent.com/${FEED_REPOSITORY}`
 const SNAPSHOT_KEY = 'sentinel-threat-feed-v1'
 const GEO_CACHE_KEY = 'sentinel-threat-geo-v1'
+const GEO_CACHE_META_KEY = 'sentinel-threat-geo-meta-v1'
 const FEED_CHECK_INTERVAL = 15 * 60 * 1000
 const GEO_LOOKUP_LIMIT = 16
 const VALID_IPV4 = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/
@@ -15,6 +18,7 @@ function readFeedCache() {
     && Number.isFinite(Date.parse(snapshot.publishedAt))
     && Array.isArray(snapshot.indicators)
     && snapshot.indicators.every((indicator) => indicator && typeof indicator.ip === 'string' && VALID_IPV4.test(indicator.ip) && [3, 6].includes(indicator.consensus))
+    && (snapshot.activity === undefined || isValidSnapshotActivity(snapshot.activity))
   ))
 }
 
@@ -102,7 +106,7 @@ export async function loadThreatFeed() {
 
   const checkedAt = new Date().toISOString()
   if (cached?.sha === latest.sha && Array.isArray(cached.indicators)) {
-    const snapshot = { ...cached, checkedAt, stale: false }
+    const snapshot = { ...cached, activity: ensureSnapshotActivity(cached), checkedAt, stale: false }
     writeJsonCache(SNAPSHOT_KEY, snapshot)
     return snapshot
   }
@@ -117,19 +121,38 @@ export async function loadThreatFeed() {
     throw new Error('The public threat feed did not contain any valid IP indicators.')
   }
 
-  const snapshot = {
+  const currentSnapshot = {
     sha: latest.sha,
     publishedAt: latest.commit.committer.date,
     checkedAt,
+    retrievedAt: new Date().toISOString(),
     indicators: createIndicators(threeOrMore, sixOrMore),
     stale: false,
+  }
+  const snapshot = {
+    ...currentSnapshot,
+    activity: [
+      ...(cached ? ensureSnapshotActivity(cached) : []),
+      createSnapshotActivity(cached, currentSnapshot),
+    ].slice(-8),
   }
   writeJsonCache(SNAPSHOT_KEY, snapshot)
   return snapshot
 }
 
 export function loadCachedThreatFeed() {
-  return readFeedCache()
+  const snapshot = readFeedCache()
+  return snapshot ? { ...snapshot, activity: ensureSnapshotActivity(snapshot) } : null
+}
+
+export function loadCachedGeoRetrievedAt() {
+  const metadata = readJsonCache(GEO_CACHE_META_KEY, (value) => Number.isFinite(value?.retrievedAt))
+  return metadata?.retrievedAt ?? null
+}
+
+export function recordGeoRetrievalSuccess(retrievedAt = Date.now()) {
+  if (!Number.isFinite(retrievedAt)) throw new TypeError('A valid GeoIP retrieval timestamp is required.')
+  writeJsonCache(GEO_CACHE_META_KEY, { retrievedAt })
 }
 
 export async function resolveIndicatorLocations(indicators, feedVersion) {
@@ -143,6 +166,8 @@ export async function resolveIndicatorLocations(indicators, feedVersion) {
   const unresolved = candidates.filter((indicator) => !geoCache[indicator.ip])
   let nextCache = geoCache
   let failures = 0
+  let freshlyResolved = 0
+  const errors = []
 
   for (let index = 0; index < unresolved.length; index += 3) {
     const batch = unresolved.slice(index, index + 3)
@@ -163,13 +188,15 @@ export async function resolveIndicatorLocations(indicators, feedVersion) {
           organization: location.org || '',
         }]
       } catch (error) {
-        console.warn(`Could not resolve location for threat indicator ${ip}.`, error)
+        logClientError('geolocation_request_failed', error, 'warn')
         failures += 1
+        errors.push(error instanceof Error ? error.message : 'Unknown GeoIP provider error.')
         return null
       }
     }))
     const resolved = results.filter(Boolean)
     if (resolved.length) {
+      freshlyResolved += resolved.length
       nextCache = { ...nextCache, ...Object.fromEntries(resolved) }
       writeJsonCache(GEO_CACHE_KEY, nextCache)
     }
@@ -180,11 +207,19 @@ export async function resolveIndicatorLocations(indicators, feedVersion) {
     return location ? [{ ip, consensus, ...location }] : []
   })
 
-  return { locations, attempted: candidates.length, failures }
+  return {
+    locations,
+    attempted: candidates.length,
+    failures,
+    freshlyResolved,
+    errors: [...new Set(errors)].slice(0, 3),
+  }
 }
 
 export const threatFeedInfo = {
+  name: 'IPsum public blocklists',
   repository: 'https://github.com/stamparm/ipsum',
+  updateMetadata: FEED_COMMIT_URL,
   refreshMinutes: FEED_CHECK_INTERVAL / 60000,
   geoLookupLimit: GEO_LOOKUP_LIMIT,
   geolocationProvider: 'https://ipapi.co/',

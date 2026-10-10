@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import landShapes from './landShapes.js'
 import {
+  loadCachedGeoRetrievedAt,
   loadCachedThreatFeed,
+  recordGeoRetrievalSuccess,
   loadThreatFeed,
   resolveIndicatorLocations,
   threatFeedInfo,
@@ -9,12 +11,30 @@ import {
 import { globalEventsInfo, loadCachedGlobalEvents, loadGlobalEvents } from './globalEvents.js'
 import { globalNewsInfo, loadCachedGlobalNews, loadGlobalNews } from './globalNews.js'
 import { filterIndicators } from './indicatorFilters.js'
+import { loadCachedVulnerabilities, loadVulnerabilities, vulnerabilityIntelInfo } from './vulnerabilityIntel.js'
+import {
+  findDomainReports,
+  findIpReputation,
+  loadCachedOpenPhishFeed,
+  loadOpenPhishFeed,
+  serializeThreatLookup,
+  threatSearchInfo,
+  validateThreatLookupInput,
+} from './threatSearch.js'
+import { buildThreatTrendModel } from './threatTrends.js'
+import { buildSourceHealthRows } from './sourceHealth.js'
+import { logClientError } from './clientLog.js'
 
 const tabs = [
   { label: 'Overview', icon: 'grid', target: 'overview' },
   { label: 'Threat map', icon: 'radar', target: 'threat-map' },
   { label: 'Indicators', icon: 'alert', target: 'indicator-panel' },
-  { label: 'Intelligence', icon: 'pulse', target: 'source-panel' },
+  { label: 'Activity', icon: 'clock', target: 'activity-timeline' },
+  { label: 'Trends', icon: 'pulse', target: 'trend-analytics' },
+  { label: 'Lookup', icon: 'search', target: 'threat-search-panel' },
+  { label: 'Vulnerabilities', icon: 'alert', target: 'vulnerability-panel' },
+  { label: 'Source health', icon: 'pulse', target: 'source-health-panel' },
+  { label: 'Learning', icon: 'grid', target: 'learning-mode' },
 ]
 
 const consensusFilters = [
@@ -60,6 +80,10 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(value)
 }
 
+function formatSignedNumber(value) {
+  return `${value > 0 ? '+' : ''}${formatNumber(value)}`
+}
+
 function formatDate(value) {
   if (!value) return 'Waiting for source'
   return `${new Intl.DateTimeFormat(undefined, {
@@ -67,6 +91,57 @@ function formatDate(value) {
     timeStyle: 'short',
     timeZone: 'UTC',
   }).format(new Date(value))} UTC`
+}
+
+function formatVulnerabilityDate(value) {
+  return Number.isFinite(value) ? formatDate(value) : 'Not provided by NVD'
+}
+
+function ThreatTrendChart({ snapshots }) {
+  const width = 640
+  const height = 205
+  const left = 42
+  const right = 624
+  const top = 17
+  const bottom = 160
+  const maxValue = Math.max(1, ...snapshots.map((snapshot) => snapshot.totalCount))
+  const points = snapshots.map((snapshot, index) => {
+    const x = snapshots.length === 1 ? (left + right) / 2 : left + index * (right - left) / (snapshots.length - 1)
+    return {
+      ...snapshot,
+      x,
+      totalY: bottom - snapshot.totalCount / maxValue * (bottom - top),
+      highY: bottom - snapshot.highCount / maxValue * (bottom - top),
+    }
+  })
+  const totalPath = points.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.totalY}`).join(' ')
+  const highPath = points.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.highY}`).join(' ')
+
+  return (
+    <div className="trend-chart-wrap">
+      <svg className="trend-history-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby="trend-chart-title trend-chart-description">
+        <title id="trend-chart-title">Collected IPsum indicator snapshots</title>
+        <desc id="trend-chart-description">Line chart of actual retrieved publisher revisions. Green shows all indicators; cyan shows indicators with six or more source-list matches. The chart contains {snapshots.length} collected snapshots.</desc>
+        {[0, 0.5, 1].map((ratio) => {
+          const y = bottom - ratio * (bottom - top)
+          return <g key={ratio}><line x1={left} y1={y} x2={right} y2={y} className="trend-chart-grid" /><text x={left - 7} y={y + 3} textAnchor="end" className="trend-chart-label">{formatNumber(Math.round(maxValue * ratio))}</text></g>
+        })}
+        {points.length > 1 && <>
+          <path d={totalPath} className="trend-chart-line trend-chart-total" />
+          <path d={highPath} className="trend-chart-line trend-chart-high" />
+        </>}
+        {points.map((point) => (
+          <g key={point.id}>
+            <title>{`Published ${formatDate(point.publishedAt)}; retrieved ${formatDate(point.retrievedAt)}; ${formatNumber(point.totalCount)} indicators, ${formatNumber(point.highCount)} with 6+ sources`}</title>
+            <circle cx={point.x} cy={point.totalY} r="3.5" className="trend-chart-point-total" />
+            <circle cx={point.x} cy={point.highY} r="3.5" className="trend-chart-point-high" />
+            <text x={point.x} y={bottom + 19} textAnchor="middle" className="trend-chart-label">{new Date(point.publishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}</text>
+          </g>
+        ))}
+      </svg>
+      <div className="trend-chart-legend"><span><i className="trend-series-total" />All IPsum indicators</span><span><i className="trend-series-high" />6+ source lists</span></div>
+    </div>
+  )
 }
 
 function projectLocation(location) {
@@ -488,16 +563,40 @@ function App() {
   const [sourceOpen, setSourceOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [feed, setFeed] = useState(() => loadCachedThreatFeed())
+  const [threatLookupInput, setThreatLookupInput] = useState('')
+  const [threatLookupResult, setThreatLookupResult] = useState(null)
+  const [threatLookupError, setThreatLookupError] = useState('')
+  const [threatLookupLoading, setThreatLookupLoading] = useState(false)
+  const [threatLookupNotice, setThreatLookupNotice] = useState('')
+  const [openPhishCache, setOpenPhishCache] = useState(() => loadCachedOpenPhishFeed())
+  const [cachedVulnerabilities] = useState(() => loadCachedVulnerabilities())
+  const [vulnerabilities, setVulnerabilities] = useState(cachedVulnerabilities?.vulnerabilities ?? [])
+  const [vulnerabilityTotal, setVulnerabilityTotal] = useState(cachedVulnerabilities?.totalResults ?? 0)
+  const [vulnerabilityCheckedAt, setVulnerabilityCheckedAt] = useState(cachedVulnerabilities?.checkedAt ?? null)
+  const [vulnerabilityStale, setVulnerabilityStale] = useState(Boolean(cachedVulnerabilities))
+  const [vulnerabilityError, setVulnerabilityError] = useState('')
+  const [vulnerabilityLoading, setVulnerabilityLoading] = useState(false)
+  const [vulnerabilityRetrySeconds, setVulnerabilityRetrySeconds] = useState(0)
+  const [vulnerabilitySearch, setVulnerabilitySearch] = useState('')
+  const [vulnerabilitySeverity, setVulnerabilitySeverity] = useState('all')
+  const vulnerabilityLoadingRef = useRef(false)
+  const vulnerabilityRetryAtRef = useRef(0)
   const [feedError, setFeedError] = useState('')
   const [feedLoading, setFeedLoading] = useState(false)
   const [geoLocations, setGeoLocations] = useState([])
   const [geoFailures, setGeoFailures] = useState(0)
   const [geoAttempted, setGeoAttempted] = useState(0)
   const [geoLoading, setGeoLoading] = useState(false)
+  const [geoLastSuccessAt, setGeoLastSuccessAt] = useState(() => loadCachedGeoRetrievedAt())
+  const [geoLastAttemptAt, setGeoLastAttemptAt] = useState(null)
+  const [geoFreshlyResolved, setGeoFreshlyResolved] = useState(0)
+  const [geoError, setGeoError] = useState('')
   const feedLoadingRef = useRef(false)
+  const feedLoadPromiseRef = useRef(null)
   const [cachedEvents] = useState(() => loadCachedGlobalEvents())
   const [globalEvents, setGlobalEvents] = useState(cachedEvents?.events ?? [])
   const [eventsUpdatedAt, setEventsUpdatedAt] = useState(cachedEvents?.updatedAt ?? null)
+  const [eventsRetrievedAt, setEventsRetrievedAt] = useState(cachedEvents?.retrievedAt ?? null)
   const [eventsStale, setEventsStale] = useState(cachedEvents?.stale ?? false)
   const [eventsError, setEventsError] = useState('')
   const [eventsLoading, setEventsLoading] = useState(false)
@@ -513,36 +612,88 @@ function App() {
   const [showNews, setShowNews] = useState(true)
   const [selectedNewsId, setSelectedNewsId] = useState(null)
   const [mapView, setMapView] = useState('2d')
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  const [openPhishLoading, setOpenPhishLoading] = useState(false)
+  const [openPhishError, setOpenPhishError] = useState('')
+  const [openPhishAttempted, setOpenPhishAttempted] = useState(Boolean(openPhishCache))
   const newsLoadingRef = useRef(false)
 
+  const refreshVulnerabilities = useCallback(async () => {
+    if (vulnerabilityLoadingRef.current) return
+    if (Date.now() < vulnerabilityRetryAtRef.current) return
+    vulnerabilityLoadingRef.current = true
+    setVulnerabilityLoading(true)
+    try {
+      const result = await loadVulnerabilities()
+      setVulnerabilities(result.vulnerabilities)
+      setVulnerabilityTotal(result.totalResults)
+      setVulnerabilityCheckedAt(result.checkedAt)
+      setVulnerabilityStale(false)
+      setVulnerabilityError('')
+      vulnerabilityRetryAtRef.current = 0
+      setVulnerabilityRetrySeconds(0)
+    } catch (error) {
+      logClientError('nvd_refresh_failed', error)
+      setVulnerabilityError(error instanceof Error ? error.message : 'Could not refresh NVD vulnerabilities.')
+      setVulnerabilityStale(true)
+      if (Number.isFinite(error?.retryAfterMs) && error.retryAfterMs > 0) {
+        vulnerabilityRetryAtRef.current = Date.now() + error.retryAfterMs
+        setVulnerabilityRetrySeconds(Math.ceil(error.retryAfterMs / 1000))
+      }
+    } finally {
+      vulnerabilityLoadingRef.current = false
+      setVulnerabilityLoading(false)
+    }
+  }, [])
+
   const refreshFeed = useCallback(async () => {
-    if (feedLoadingRef.current) return
+    if (feedLoadingRef.current) return feedLoadPromiseRef.current ?? null
     feedLoadingRef.current = true
     setFeedLoading(true)
-    try {
-      setFeed(await loadThreatFeed())
-      setFeedError('')
-    } catch (error) {
-      console.error('Could not refresh the public IPsum threat feed.', error)
-      setFeedError(error instanceof Error ? error.message : 'Could not refresh the public threat feed.')
-      setFeed((current) => current ? { ...current, stale: true } : current)
-    } finally {
-      feedLoadingRef.current = false
-      setFeedLoading(false)
-    }
+    const request = (async () => {
+      try {
+        const result = await loadThreatFeed()
+        setFeed(result)
+        setFeedError('')
+        return result
+      } catch (error) {
+        logClientError('threat_feed_refresh_failed', error)
+        setFeedError(error instanceof Error ? error.message : 'Could not refresh the public threat feed.')
+        setFeed((current) => current ? { ...current, stale: true } : current)
+        return null
+      } finally {
+        feedLoadingRef.current = false
+        feedLoadPromiseRef.current = null
+        setFeedLoading(false)
+      }
+    })()
+    feedLoadPromiseRef.current = request
+    return request
   }, [])
 
   const refreshLocations = useCallback(async (indicators, feedVersion) => {
     if (!indicators?.length || !feedVersion) return
+    setGeoLastAttemptAt(Date.now())
+    setGeoError('')
     setGeoLoading(true)
     try {
       const result = await resolveIndicatorLocations(indicators, feedVersion)
       setGeoLocations(result.locations)
       setGeoAttempted(result.attempted)
       setGeoFailures(result.failures)
+      setGeoFreshlyResolved(result.freshlyResolved)
+      if (result.freshlyResolved > 0) {
+        const retrievedAt = Date.now()
+        recordGeoRetrievalSuccess(retrievedAt)
+        setGeoLastSuccessAt(retrievedAt)
+      }
+      setGeoError(result.errors.length
+        ? `${result.failures} of ${result.attempted} IP location requests failed: ${result.errors.join(' ')}`
+        : '')
     } catch (error) {
-      console.error('Could not resolve IP indicator locations.', error)
+      logClientError('geolocation_refresh_failed', error)
       setGeoFailures((count) => count + 1)
+      setGeoError(error instanceof Error ? error.message : 'Could not retrieve IP geolocation data.')
     } finally {
       setGeoLoading(false)
     }
@@ -556,10 +707,11 @@ function App() {
       const result = await loadGlobalEvents()
       setGlobalEvents(result.events)
       setEventsUpdatedAt(result.updatedAt)
+      setEventsRetrievedAt(result.retrievedAt)
       setEventsStale(false)
       setEventsError('')
     } catch (error) {
-      console.error('Could not refresh the USGS global-events feed.', error)
+      logClientError('events_refresh_failed', error)
       setEventsError(error instanceof Error ? error.message : 'Could not refresh global events.')
       setEventsStale(true)
     } finally {
@@ -579,7 +731,7 @@ function App() {
       setNewsStale(false)
       setNewsError('')
     } catch (error) {
-      console.error('Could not refresh the BBC World news feed.', error)
+      logClientError('news_refresh_failed', error)
       setNewsError(error instanceof Error ? error.message : 'Could not refresh global news.')
       setNewsStale(true)
     } finally {
@@ -607,24 +759,33 @@ function App() {
   }, [refreshNews])
 
   useEffect(() => {
-    if (!feed) return undefined
-    let cancelled = false
-    setGeoLoading(true)
-    resolveIndicatorLocations(feed.indicators, feed.sha)
-      .then((result) => {
-        if (cancelled) return
-        setGeoLocations(result.locations)
-        setGeoAttempted(result.attempted)
-        setGeoFailures(result.failures)
-      })
-      .catch((error) => {
-        if (cancelled) return
-        console.error('Could not resolve IP indicator locations.', error)
-        setGeoFailures((count) => count + 1)
-      })
-      .finally(() => { if (!cancelled) setGeoLoading(false) })
-    return () => { cancelled = true }
-  }, [feed?.sha])
+    refreshVulnerabilities()
+    const timer = window.setInterval(refreshVulnerabilities, vulnerabilityIntelInfo.refreshMinutes * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [refreshVulnerabilities])
+
+  useEffect(() => {
+    if (!vulnerabilityRetrySeconds) return undefined
+    const timer = window.setInterval(() => {
+      const seconds = Math.max(0, Math.ceil((vulnerabilityRetryAtRef.current - Date.now()) / 1000))
+      setVulnerabilityRetrySeconds(seconds)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [vulnerabilityRetrySeconds > 0])
+
+  useEffect(() => {
+    if (feed) refreshLocations(feed.indicators, feed.sha)
+  }, [feed?.sha, refreshLocations])
+
+  useEffect(() => {
+    const updateOnlineStatus = () => setOnline(navigator.onLine)
+    window.addEventListener('online', updateOnlineStatus)
+    window.addEventListener('offline', updateOnlineStatus)
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus)
+      window.removeEventListener('offline', updateOnlineStatus)
+    }
+  }, [])
 
   useEffect(() => {
     if (!searchOpen) return undefined
@@ -670,6 +831,92 @@ function App() {
     return geoLocations.filter((location) => matches.has(location.ip))
   }, [filteredIndicators, geoLocations])
 
+  const filteredVulnerabilities = useMemo(() => {
+    const query = vulnerabilitySearch.trim().toLowerCase()
+    return vulnerabilities.filter((vulnerability) => {
+      if (vulnerabilitySeverity !== 'all' && vulnerability.metrics.severity !== vulnerabilitySeverity) return false
+      if (!query) return true
+      const affected = vulnerability.affectedProducts
+        .map((product) => `${product.vendor} ${product.product} ${product.versionRange}`)
+        .join(' ')
+      return `${vulnerability.id} ${vulnerability.description} ${affected}`
+        .toLowerCase()
+        .includes(query)
+    })
+  }, [vulnerabilities, vulnerabilitySearch, vulnerabilitySeverity])
+
+  const threatTrends = useMemo(() => buildThreatTrendModel(
+    feed?.activity ?? [],
+    feed?.indicators ?? [],
+    geoLocations,
+    vulnerabilities,
+    geoAttempted,
+  ), [feed?.activity, feed?.indicators, geoLocations, vulnerabilities, geoAttempted])
+
+  const sourceHealthRows = useMemo(() => buildSourceHealthRows({
+    online,
+    threat: {
+      count: feed?.indicators.length ?? 0,
+      attempted: Boolean(feed || feedLoading || feedError),
+      lastSuccessAt: feed?.checkedAt ?? feed?.retrievedAt ?? null,
+      latestUpdateAt: feed?.publishedAt ?? null,
+      loading: feedLoading,
+      stale: Boolean(feed?.stale),
+      error: feedError,
+    },
+    geolocation: {
+      resolved: geoLocations.length,
+      attempted: geoAttempted,
+      attemptedRequest: Boolean(geoLastAttemptAt),
+      freshlyResolved: geoFreshlyResolved,
+      lastSuccessAt: geoLastSuccessAt,
+      loading: geoLoading,
+      stale: Boolean(geoLocations.length && (geoFailures > 0 || !geoLastSuccessAt || geoFreshlyResolved === 0)),
+      error: geoError,
+    },
+    events: {
+      count: globalEvents.length,
+      attempted: Boolean(cachedEvents || eventsRetrievedAt || eventsError || eventsLoading),
+      lastSuccessAt: eventsRetrievedAt,
+      latestUpdateAt: eventsUpdatedAt,
+      loading: eventsLoading,
+      stale: eventsStale,
+      error: eventsError,
+    },
+    news: {
+      count: newsArticles.length,
+      attempted: Boolean(cachedNews || newsUpdatedAt || newsError || newsLoading),
+      lastSuccessAt: newsUpdatedAt,
+      latestUpdateAt: newsArticles.reduce((latest, article) => Math.max(latest, article.publishedAt), 0) || null,
+      loading: newsLoading,
+      stale: newsStale,
+      error: newsError,
+    },
+    vulnerabilities: {
+      count: vulnerabilities.length,
+      attempted: Boolean(cachedVulnerabilities || vulnerabilityCheckedAt || vulnerabilityError || vulnerabilityLoading),
+      lastSuccessAt: vulnerabilityCheckedAt,
+      latestUpdateAt: vulnerabilities.reduce((latest, vulnerability) => Math.max(latest, vulnerability.publishedAt ?? 0), 0) || null,
+      loading: vulnerabilityLoading,
+      stale: vulnerabilityStale,
+      error: vulnerabilityError,
+    },
+    phishing: {
+      count: openPhishCache?.urls.length ?? 0,
+      lastSuccessAt: openPhishCache?.retrievedAt ?? null,
+      attempted: openPhishAttempted,
+      loading: openPhishLoading,
+      stale: Boolean(openPhishCache?.stale),
+      error: openPhishError,
+    },
+  }), [
+    online, feed, feedLoading, feedError, geoLocations, geoAttempted, geoLastAttemptAt, geoFreshlyResolved, geoLastSuccessAt, geoLoading, geoFailures, geoError,
+    globalEvents.length, eventsRetrievedAt, eventsUpdatedAt, eventsLoading, eventsStale, eventsError,
+    newsArticles, newsUpdatedAt, newsLoading, newsStale, newsError,
+    vulnerabilities, vulnerabilityCheckedAt, vulnerabilityLoading, vulnerabilityStale, vulnerabilityError,
+    openPhishCache, openPhishAttempted, openPhishLoading, openPhishError,
+  ])
+
   const navigateTo = (tab) => {
     setActiveTab(tab.label)
     document.getElementById(tab.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -687,6 +934,87 @@ function App() {
     const link = document.createElement('a')
     link.href = downloadUrl
     link.download = 'sentinel-threat-indicators.csv'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000)
+  }
+
+  const refreshOpenPhishFeed = async (force = false) => {
+    setOpenPhishAttempted(true)
+    setOpenPhishLoading(true)
+    setOpenPhishError('')
+    try {
+      const snapshot = await loadOpenPhishFeed({ force })
+      setOpenPhishCache(snapshot)
+      setOpenPhishError(snapshot.error ?? '')
+      return snapshot
+    } catch (error) {
+      setOpenPhishError(error instanceof Error ? error.message : 'Could not retrieve the OpenPhish feed.')
+      throw error
+    } finally {
+      setOpenPhishLoading(false)
+    }
+  }
+
+  const refreshSource = (sourceId) => {
+    switch (sourceId) {
+      case 'ipsum': return refreshFeed()
+      case 'geoip': return feed && refreshLocations(feed.indicators, feed.sha)
+      case 'usgs': return refreshGlobalEvents()
+      case 'bbc': return refreshNews()
+      case 'nvd': return refreshVulnerabilities()
+      case 'openphish': return refreshOpenPhishFeed(true).catch(() => null)
+      default: throw new Error(`Unsupported data source: ${sourceId}`)
+    }
+  }
+
+  const handleThreatLookup = async (event) => {
+    event.preventDefault()
+    const validation = validateThreatLookupInput(threatLookupInput)
+    setThreatLookupNotice('')
+    if (!validation.valid) {
+      setThreatLookupResult(null)
+      setThreatLookupError(validation.error)
+      return
+    }
+
+    setThreatLookupError('')
+    setThreatLookupResult(null)
+    setThreatLookupLoading(true)
+    try {
+      if (validation.type === 'ip') {
+        const snapshot = feed ?? await refreshFeed()
+        if (!snapshot) throw new Error('Could not retrieve the IPsum feed; see Source health for details.')
+        setThreatLookupResult({ query: validation.value, type: 'ip', data: findIpReputation(validation.value, snapshot) })
+      } else {
+        const snapshot = await refreshOpenPhishFeed()
+        setThreatLookupResult({ query: validation.value, type: 'domain', data: findDomainReports(validation.value, snapshot) })
+      }
+    } catch (error) {
+      logClientError('threat_lookup_failed', error)
+      setThreatLookupError(error instanceof Error ? error.message : 'Could not complete the lookup. Try again later.')
+    } finally {
+      setThreatLookupLoading(false)
+    }
+  }
+
+  const copyThreatLookup = async () => {
+    if (!threatLookupResult) return
+    try {
+      await navigator.clipboard.writeText(serializeThreatLookup(threatLookupResult).content)
+      setThreatLookupNotice('JSON findings copied to clipboard.')
+    } catch (error) {
+      logClientError('threat_lookup_copy_failed', error)
+      setThreatLookupNotice('Clipboard access was unavailable. Use Export JSON instead.')
+    }
+  }
+
+  const exportThreatLookup = (format) => {
+    if (!threatLookupResult) return
+    const file = serializeThreatLookup(threatLookupResult, format)
+    const downloadUrl = URL.createObjectURL(new Blob([file.content], { type: file.mimeType }))
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = `threat-lookup-${threatLookupResult.type}.${file.extension}`
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000)
   }
@@ -729,7 +1057,7 @@ function App() {
         </nav>
 
         <div className="nav-label intel-label">INTELLIGENCE</div>
-        <button className="nav-item subdued" onClick={() => navigateTo(tabs[3])}><span className="nav-mini-icon">◈</span><span>Feed sources</span></button>
+        <button className="nav-item subdued" onClick={() => navigateTo(tabs.find((tab) => tab.target === 'source-health-panel'))}><span className="nav-mini-icon">◈</span><span>Feed sources</span></button>
         <button className="nav-item subdued" onClick={exportIndicators}><Icon name="download" /><span>Export indicators</span></button>
 
         <div className="sidebar-spacer" />
@@ -885,6 +1213,385 @@ function App() {
                 </article>
               )) : <div className="events-empty">{eventsLoading ? 'Loading recent earthquakes from USGS…' : eventsError ? 'Global events could not be loaded. Retry to check the USGS feed.' : 'No M4.5+ earthquakes reported in the past day.'}</div>}
             </div>
+          </section>
+
+          <section className="events-panel threat-timeline" id="activity-timeline" aria-labelledby="activity-timeline-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="activity-timeline-title">Threat activity timeline</h2><p>IPsum snapshot changes compared by this browser</p></div>
+              <span className="timeline-source-badge">{feed?.stale ? 'CACHED SNAPSHOT' : 'PUBLIC SOURCE'}</span>
+            </div>
+            <p className="timeline-disclaimer">IPsum does not provide per-IP first-seen or observation timestamps. “Newly listed” means present in this snapshot but absent from the previous snapshot cached here; it does not mean a newly active threat. The first available snapshot is a baseline, not invented history.</p>
+            <div className="timeline-list">
+              {feed?.activity?.length ? [...feed.activity].reverse().map((activity) => (
+                <article className="timeline-entry" key={activity.id}>
+                  <div className="timeline-entry-heading">
+                    <span className={`timeline-marker ${activity.baseline ? 'timeline-marker-baseline' : ''}`} />
+                    <div><h3>{activity.baseline ? 'Baseline snapshot loaded' : 'IPsum publisher snapshot updated'}</h3><p>{activity.source} · source revision <code>{activity.id.slice(0, 8)}</code></p></div>
+                    <a href={activity.sourceUrl} target="_blank" rel="noreferrer">Source ↗</a>
+                  </div>
+                  <div className="timeline-timestamps">
+                    <span>Provider published <strong>{formatDate(activity.publishedAt)}</strong></span>
+                    <span>{activity.dashboardTimestampType === 'retrieved' ? 'Dashboard retrieved' : 'Dashboard last checked'} <strong>{formatDate(activity.retrievedAt)}</strong></span>
+                  </div>
+                  <div className="timeline-counts">
+                    <span><strong>{formatNumber(activity.totalCount)}</strong> current indicators</span>
+                    {activity.baseline
+                      ? <span>Prior local snapshot unavailable; changes are not inferred.</span>
+                      : <>
+                        <span><strong>{formatNumber(activity.newlyListed.count)}</strong> newly listed since previous snapshot</span>
+                        <span><strong>{formatNumber(activity.retained.count)}</strong> remained listed</span>
+                        <span><strong>{formatNumber(activity.noLongerListed.count)}</strong> no longer listed</span>
+                        {activity.strengthened.count > 0 && <span><strong>{formatNumber(activity.strengthened.count)}</strong> moved from 3+ to 6+ list consensus</span>}
+                      </>}
+                  </div>
+                  {!activity.baseline && <div className="timeline-change-groups">
+                    {[
+                      ['Newly listed in this snapshot', activity.newlyListed],
+                      ['Previously known and still listed', activity.retained],
+                      ['No longer present in this snapshot', activity.noLongerListed],
+                      ['Consensus increased to 6+ lists', activity.strengthened],
+                    ].filter(([, summary]) => summary.count > 0).map(([label, summary]) => (
+                      <details className="timeline-change-group" key={label}>
+                        <summary>{label} · showing {formatNumber(summary.sample.length)} of {formatNumber(summary.count)}</summary>
+                        <ul>{summary.sample.map((indicator) => <li key={indicator.ip}><code>{indicator.ip}</code><span>{indicator.consensus}+ source lists</span></li>)}</ul>
+                      </details>
+                    ))}
+                  </div>}
+                  <p className="timeline-source-note">Source publication time describes the IPsum snapshot. The dashboard timestamp records when this browser checked or retrieved it; neither is an individual IP observation time.</p>
+                </article>
+              )) : <div className="events-empty">{feedLoading ? 'Checking IPsum for a published snapshot…' : feedError ? 'No cached snapshot history is available. Retry to establish a baseline.' : 'No IPsum snapshot is available yet.'}</div>}
+            </div>
+          </section>
+
+          <section className="events-panel threat-trends-panel" id="trend-analytics" aria-labelledby="threat-trends-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="threat-trends-title">Historical trends &amp; statistics</h2><p>Collected publisher revisions and current public-feed coverage</p></div>
+              <span className="timeline-source-badge">{threatTrends.snapshotCount} LOCAL SNAPSHOT{threatTrends.snapshotCount === 1 ? '' : 'S'}</span>
+            </div>
+            <p className="trend-disclaimer">Historical charts use only distinct IPsum revisions this browser actually retrieved (up to the latest eight). They do not backfill gaps or represent per-IP observation dates. Location counts describe approximate IP hosting locations in the current GeoIP sample; they do not identify an attacker or indicate attack origin. World news and earthquakes remain separate and are excluded from cyber-intelligence counts.</p>
+            <div className="trend-metrics">
+              <article><span>COLLECTED REVISIONS</span><strong>{formatNumber(threatTrends.snapshotCount)}</strong><small>{threatTrends.snapshotCount > 1 ? 'Enough for a revision-to-revision comparison' : threatTrends.snapshotCount === 1 ? 'One baseline; comparison unavailable' : 'No collected snapshot history yet'}</small></article>
+              <article><span>INDICATORS IN LATEST SNAPSHOT</span><strong>{threatTrends.latest ? formatNumber(threatTrends.latest.totalCount) : '—'}</strong><small>{threatTrends.latest ? `Published ${formatDate(threatTrends.latest.publishedAt)}` : 'IPsum feed not available'}</small></article>
+              <article><span>CHANGE VS PREVIOUS REVISION</span><strong>{threatTrends.latest && threatTrends.latest.totalChange !== null ? formatSignedNumber(threatTrends.latest.totalChange) : '—'}</strong><small>{threatTrends.comparisonAvailable ? `${formatNumber(threatTrends.latest.newlyListed.count)} newly listed · ${formatNumber(threatTrends.latest.noLongerListed.count)} no longer listed` : 'Requires at least two collected revisions'}</small></article>
+              <article><span>CURRENT GEOIP SAMPLE</span><strong>{formatNumber(threatTrends.countryCoverage.resolvedIndicators)} / {formatNumber(threatTrends.countryCoverage.attemptedIndicators)}</strong><small>Resolved / attempted · current feed only</small></article>
+            </div>
+            <div className="trend-content-grid">
+              <article className="trend-data-card trend-history-card">
+                <div className="trend-card-heading"><div><h3>Reported indicators by collected revision</h3><p>Source publication date shown on the axis; exact publisher and dashboard times are below.</p></div><a href={threatFeedInfo.repository} target="_blank" rel="noreferrer">IPsum source ↗</a></div>
+                {threatTrends.snapshots.length
+                  ? <ThreatTrendChart snapshots={threatTrends.snapshots} />
+                  : <div className="trend-empty">{feedLoading ? 'Waiting for the first IPsum revision…' : 'No real snapshot history is available yet. A baseline will appear after the first successful feed retrieval.'}</div>}
+                {threatTrends.snapshots.length === 1 && <p className="trend-history-note">This single point is the locally observed baseline; no historical comparison is inferred.</p>}
+                {threatTrends.snapshots.length > 0 && <details className="trend-snapshot-details">
+                  <summary>Recorded source and dashboard timestamps · {threatTrends.snapshotCount} revisions</summary>
+                  <div className="trend-snapshot-table-wrap"><table className="trend-snapshot-table">
+                    <thead><tr><th>Source published</th><th>Retrieved by dashboard</th><th>Indicators</th><th>6+ lists</th><th>Net change</th></tr></thead>
+                    <tbody>{[...threatTrends.snapshots].reverse().map((snapshot) => (
+                      <tr key={snapshot.id}>
+                        <td>{formatDate(snapshot.publishedAt)}</td><td>{formatDate(snapshot.retrievedAt)}</td>
+                        <td>{formatNumber(snapshot.totalCount)}</td><td>{formatNumber(snapshot.highCount)}</td>
+                        <td>{snapshot.totalChange === null ? 'Baseline' : formatSignedNumber(snapshot.totalChange)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                </details>}
+              </article>
+              <article className="trend-data-card trend-activity-card">
+                <div className="trend-card-heading"><div><h3>Latest revision activity</h3><p>Changes observed between successive public feed revisions</p></div></div>
+                {threatTrends.latest && threatTrends.previous ? (
+                  <div className="trend-activity-stats">
+                    <div><span>Newly listed</span><strong>+{formatNumber(threatTrends.latest.newlyListed.count)}</strong></div>
+                    <div><span>No longer listed</span><strong>−{formatNumber(threatTrends.latest.noLongerListed.count)}</strong></div>
+                    <div><span>Moved to 6+ consensus</span><strong>{formatSignedNumber(threatTrends.latest.highChange)}</strong></div>
+                    <div><span>Total indicators</span><strong>{formatSignedNumber(threatTrends.latest.totalChange)}</strong></div>
+                  </div>
+                ) : <div className="trend-empty">Activity change counts require two distinct collected IPsum revisions. A publisher revision is not evidence of a newly active attack.</div>}
+                <p className="trend-panel-note">Newly listed and removed counts compare feed membership across these collected snapshots only. They do not establish when an indicator first appeared upstream or whether it affected a network.</p>
+              </article>
+              <article className="trend-data-card">
+                <div className="trend-card-heading"><div><h3>Categories in available feeds</h3><p>Source-provided classifications; unlike records are not combined</p></div></div>
+                <div className="trend-category-block">
+                  <div className="trend-category-label"><span>IPsum · {feed?.stale ? 'cached ' : ''}IP reputation indicators</span><strong>{formatNumber(threatTrends.categories.ipReputationCount)}</strong></div>
+                  <p>IPsum supplies reputation and source-list consensus, not malware family or attack type.</p>
+                </div>
+                <div className="trend-category-block">
+                  <div className="trend-category-label"><span>NVD · {vulnerabilityStale ? 'cached ' : ''}fetched CVEs by CVSS severity</span><strong>{formatNumber(threatTrends.categories.vulnerabilityCount)}</strong></div>
+                  {threatTrends.categories.vulnerabilitySeverities.length
+                    ? <ul className="trend-severity-list">{threatTrends.categories.vulnerabilitySeverities.map(({ severity, count }) => <li key={severity}><span>{severity}</span><strong>{formatNumber(count)}</strong></li>)}</ul>
+                    : <p>No scored or fetched NVD CVE records are currently available.</p>}
+                  <p>CVE severity is vulnerability metadata, not observed attack activity.</p>
+                </div>
+              </article>
+              <article className="trend-data-card">
+                <div className="trend-card-heading"><div><h3>Countries associated with current indicators</h3><p>Approximate IP hosting locations · sampled and resolved only</p></div></div>
+                {threatTrends.countryCoverage.countries.length
+                  ? <ul className="trend-country-list">{threatTrends.countryCoverage.countries.map(({ country, count }) => (
+                    <li key={country}><span>{country}</span><span className="trend-country-bar"><i style={{ width: `${count / threatTrends.countryCoverage.countries[0].count * 100}%` }} /></span><strong>{formatNumber(count)}</strong></li>
+                  ))}</ul>
+                  : <div className="trend-empty">{geoLoading ? 'Resolving approximate locations for a limited indicator sample…' : 'No current sampled indicators have a resolved country location.'}</div>}
+                <p className="trend-panel-note">Counts are current sampled indicators, not unique attacks or attribution. GeoIP describes approximate IP hosting location and may be missing or inaccurate.</p>
+              </article>
+            </div>
+          </section>
+
+          <section className="events-panel source-health-panel" id="source-health-panel" aria-labelledby="source-health-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="source-health-title">Data source health</h2><p>Retrieval status, last success, source update times, and stale-data warnings</p></div>
+              <span className={`source-online-badge ${online ? 'online' : 'offline'}`}><i />{online ? 'BROWSER ONLINE' : 'BROWSER OFFLINE'}</span>
+            </div>
+            <p className="source-health-disclaimer">A successful check is not necessarily a new source update. “Last successful retrieval” is tracked separately from the publisher’s update timestamp. OpenPhish is fetched only on request; GeoIP timestamps are available only for successful provider requests recorded by this browser.</p>
+            <div className="source-health-grid">
+              {sourceHealthRows.map((source) => {
+                const sourceStatusLabel = {
+                  loading: 'Retrieving',
+                  ready: 'Retrieved successfully',
+                  empty: 'Retrieved · no records',
+                  idle: 'Not checked',
+                  stale: 'Cached · may be stale',
+                  error: 'Retrieval failed',
+                  offline: 'Browser offline',
+                }[source.status]
+                const lastSuccess = source.lastSuccessAt
+                  ? formatDate(source.lastSuccessAt)
+                  : source.hasData ? 'Retrieval time not recorded' : source.attempted ? 'No successful retrieval recorded' : 'Not checked yet'
+                const currentRows = source.id === 'ipsum' ? feed?.indicators.length
+                  : source.id === 'geoip' ? geoLocations.length
+                    : source.id === 'usgs' ? globalEvents.length
+                      : source.id === 'bbc' ? newsArticles.length
+                        : source.id === 'nvd' ? vulnerabilities.length
+                          : openPhishCache?.urls.length
+                return (
+                  <article className={`source-health-card source-status-${source.status}`} key={source.id}>
+                    <div className="source-health-card-heading">
+                      <div><h3>{source.name}</h3><p>{source.description}</p></div>
+                      <span className="source-status-badge"><i />{sourceStatusLabel}</span>
+                    </div>
+                    <div className="source-health-details">
+                      <div><span>LAST SUCCESSFUL RETRIEVAL / CHECK</span><strong>{lastSuccess}</strong></div>
+                      <div><span>{source.latestUpdateLabel.toUpperCase()}</span><strong>{source.latestUpdateAt ? formatDate(source.latestUpdateAt) : source.latestUpdateLabel.includes('not supplied') ? 'Not provided by source' : 'Not available in latest response'}</strong></div>
+                      <div><span>DISPLAYED RECORDS</span><strong>{source.hasData ? `${formatNumber(currentRows ?? source.count)}${source.stale ? ' · cached' : ''}` : source.loading ? 'Waiting for response' : source.status === 'empty' ? '0 · successful empty response' : source.status === 'stale' ? 'No records in last successful snapshot · may be stale' : 'No records available'}</strong></div>
+                    </div>
+                    {source.error && <p className={`source-health-error ${source.status === 'offline' ? 'is-offline' : ''}`} role="status">{source.error}</p>}
+                    <div className="source-health-footer">
+                      <a href={source.sourceUrl} target="_blank" rel="noreferrer">{source.id === 'openphish' ? 'Provider information' : 'Source details'} ↗</a>
+                      <button onClick={() => refreshSource(source.refresh)} disabled={!online || source.loading || (source.id === 'geoip' && !feed) || (source.id === 'nvd' && vulnerabilityRetrySeconds > 0)}>{source.loading ? 'Checking…' : source.id === 'nvd' && vulnerabilityRetrySeconds > 0 ? `Retry in ${vulnerabilityRetrySeconds}s` : source.id === 'openphish' ? 'Refresh feed' : source.id === 'geoip' ? 'Resolve sample' : 'Check now'}</button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+            <p className="source-health-footnote">World news is retrieved through the rss2json converter. IPsum and NVD provide publisher timestamps; USGS provides feed-generation time. BBC article publication time is shown as the newest included article, not a feed-generation timestamp.</p>
+          </section>
+
+          <section className="events-panel learning-panel" id="learning-mode" aria-labelledby="learning-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="learning-title">Cybersecurity learning mode</h2><p>Plain-language guide to the data and terms used in this dashboard</p></div>
+              <span className="timeline-source-badge">DEFENSIVE BASICS</span>
+            </div>
+            <p className="learning-intro">Threat feeds are useful clues, not verdicts. Use them to decide what to investigate next, then verify findings with trustworthy sources and your own device or organization’s security records.</p>
+            <div className="learning-grid">
+              <article className="learning-card">
+                <span className="learning-step">01 · FOUNDATIONS</span>
+                <h3>What is threat intelligence?</h3>
+                <p>Threat intelligence is information about potential or observed cyber risks—such as suspicious IP addresses, phishing websites, malicious software, or attacker techniques—collected from sources and given context so people can make defensive decisions.</p>
+                <p><strong>Example:</strong> several independent blocklists report an IP address. That makes the address worth checking against your logs; it does not show that the address contacted your network.</p>
+                <a href="https://www.cisa.gov/topics/cyber-threats-and-advisories" target="_blank" rel="noreferrer">CISA · Cyber threats and advisories ↗</a>
+              </article>
+              <article className="learning-card">
+                <span className="learning-step">02 · INDICATORS</span>
+                <h3>What does a malicious IP indicator mean?</h3>
+                <p>An IP indicator is a network address associated by a source with suspicious or harmful activity. Addresses can be reassigned, shared by many users, used by cloud providers, or incorrectly listed.</p>
+                <p><strong>Example:</strong> a listed address might belong to a server that was abused last week—or to shared hosting. Check the source, time, and your own logs before blocking or drawing conclusions. A GeoIP country identifies an approximate hosting location, not a person or attacker.</p>
+                <a href="https://www.cisa.gov/news-events/cybersecurity-advisories" target="_blank" rel="noreferrer">CISA · Advisories and indicators ↗</a>
+              </article>
+              <article className="learning-card">
+                <span className="learning-step">03 · COMMON CATEGORIES</span>
+                <h3>Common threat-intelligence categories</h3>
+                <ul className="learning-list">
+                  <li><strong>Phishing:</strong> messages or websites designed to trick people into sharing information or opening harmful content.</li>
+                  <li><strong>Malware:</strong> software intended to disrupt devices, steal information, or enable unauthorized access.</li>
+                  <li><strong>Command and control (C2):</strong> infrastructure malware may contact to receive instructions or send data.</li>
+                  <li><strong>Scanning / brute force:</strong> repeated attempts to discover exposed services or guess account credentials.</li>
+                  <li><strong>Vulnerability:</strong> a weakness in software or hardware that could be misused.</li>
+                </ul>
+                <p>This dashboard’s IPsum feed reports IP reputation and source-list counts only; it does not assign those attack categories to each IP.</p>
+                <a href="https://attack.mitre.org/" target="_blank" rel="noreferrer">MITRE ATT&amp;CK · Adversary tactics and techniques ↗</a>
+              </article>
+              <article className="learning-card">
+                <span className="learning-step">04 · READING THE SCORES</span>
+                <h3>Confidence, consensus, and severity</h3>
+                <p><strong>IPsum consensus</strong> is how many contributing lists include an address: this dashboard shows 3+ and 6+ tiers. More independent listings can strengthen a reputation signal, but do not prove a real attack or guarantee that every source is correct.</p>
+                <p><strong>CVSS severity</strong> describes the technical severity of a vulnerability under a scoring standard. It is not the probability your device is affected, evidence that it was exploited, or an incident-confidence score. Prioritize using your actual software inventory, exposure, and vendor guidance.</p>
+                <a href="https://www.first.org/cvss/" target="_blank" rel="noreferrer">FIRST · CVSS severity scoring ↗</a>
+              </article>
+              <article className="learning-card learning-card-wide">
+                <span className="learning-step">05 · THREE DIFFERENT THINGS</span>
+                <h3>Indicator vs. vulnerability vs. confirmed incident</h3>
+                <div className="learning-comparison">
+                  <div><span className="learning-term">INDICATOR</span><p>A clue reported by an intelligence source, such as an IP or phishing URL. It suggests something to check.</p></div>
+                  <div><span className="learning-term">VULNERABILITY</span><p>A documented weakness in a product or configuration, often tracked as a CVE. It matters if your systems are affected and exposed.</p></div>
+                  <div><span className="learning-term">CONFIRMED INCIDENT</span><p>An event supported by evidence from relevant logs, endpoint/network telemetry, investigation, or a trusted incident-response team.</p></div>
+                </div>
+                <p className="learning-callout"><strong>In this dashboard:</strong> IPsum and OpenPhish provide public reputation indicators; NVD provides vulnerability records. None is connected to your devices or network, so none can confirm an incident here.</p>
+                <a href="https://www.nist.gov/cyberframework" target="_blank" rel="noreferrer">NIST · Cybersecurity Framework and risk management ↗</a>
+              </article>
+              <article className="learning-card">
+                <span className="learning-step">06 · FOR EVERYONE</span>
+                <h3>Defensive steps for individuals</h3>
+                <ul className="learning-list">
+                  <li>Use a password manager and unique passwords; turn on multi-factor authentication where available.</li>
+                  <li>Install operating-system, browser, and app updates from official sources.</li>
+                  <li>Pause before opening unexpected links or attachments; verify unusual requests through a known contact method.</li>
+                  <li>Keep important files backed up and know how to report a suspicious message or account activity.</li>
+                </ul>
+                <a href="https://www.cisa.gov/secure-our-world" target="_blank" rel="noreferrer">CISA · Secure Our World ↗</a>
+              </article>
+              <article className="learning-card">
+                <span className="learning-step">07 · FOR ORGANIZATIONS</span>
+                <h3>Defensive steps for teams</h3>
+                <ul className="learning-list">
+                  <li>Inventory assets and prioritize fixes using exposure, business impact, and vendor remediation advice.</li>
+                  <li>Correlate indicators with authorized DNS, proxy, firewall, identity, and endpoint logs before taking action.</li>
+                  <li>Validate indicator source, age, confidence, and likely false positives; use controls proportionately.</li>
+                  <li>Maintain tested backups, least-privilege access, incident-response contacts, and a documented escalation plan.</li>
+                </ul>
+                <a href="https://www.cisa.gov/cross-sector-cybersecurity-performance-goals" target="_blank" rel="noreferrer">CISA · Cybersecurity Performance Goals ↗</a>
+              </article>
+            </div>
+            <p className="learning-footer">Learning links open authoritative external references. Guidance is general education, not a substitute for your organization’s security policy or incident-response procedures.</p>
+          </section>
+
+          <section className="events-panel threat-search-panel" id="threat-search-panel" aria-labelledby="threat-search-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="threat-search-title">Threat intelligence search</h2><p>Check an IPv4 address or domain against supported public feeds</p></div>
+              <span className="timeline-source-badge">{openPhishCache ? 'DOMAIN CACHE AVAILABLE' : 'PUBLIC SOURCES'}</span>
+            </div>
+            <p className="threat-search-disclaimer">Defensive reputation lookup only: this checks public snapshots and never connects to, resolves, scans, or probes the submitted host. A listing is not proof of an active attack or compromise, and no match is not proof of safety.</p>
+            <p className="threat-search-terms" role="note">OpenPhish Community Feed terms allow personal, academic, or independent research only. Organizational business/security use requires prior written consent. <a href="https://openphish.com/terms.html" target="_blank" rel="noreferrer">Review current terms ↗</a></p>
+            <form className="threat-search-form" onSubmit={handleThreatLookup}>
+              <label htmlFor="threat-search-input">IPv4 address, domain, or http/https URL</label>
+              <div className="threat-search-controls">
+                <input id="threat-search-input" type="search" autoCapitalize="none" autoCorrect="off" spellCheck="false" value={threatLookupInput} onChange={(event) => setThreatLookupInput(event.target.value)} placeholder="203.0.113.10 or example.com" aria-describedby="threat-search-help" />
+                <button type="submit" disabled={threatLookupLoading}>{threatLookupLoading ? 'Checking public feed…' : 'Check indicator'}</button>
+              </div>
+              <span id="threat-search-help">IPv4 checks IPsum reputation; domains check OpenPhish’s public community feed. IPv6 is not supported.</span>
+            </form>
+            {threatLookupError && <div className="events-error" role="alert">{threatLookupError}</div>}
+            {threatLookupResult && (
+              <div className="threat-lookup-result" aria-live="polite">
+                <div className="threat-result-heading">
+                  <div><span className={`threat-result-status ${(threatLookupResult.data.found ?? (threatLookupResult.data.matches?.length > 0)) ? 'is-listed' : 'not-listed'}`}>
+                    {(threatLookupResult.data.found ?? (threatLookupResult.data.matches?.length > 0)) ? 'LISTED IN SNAPSHOT' : 'NO MATCH IN SNAPSHOT'}
+                  </span><h3><code>{threatLookupResult.query}</code></h3></div>
+                  <div className="threat-result-actions">
+                    <button onClick={copyThreatLookup}>Copy JSON</button>
+                    <button onClick={() => exportThreatLookup('json')}>Export JSON</button>
+                    <button onClick={() => exportThreatLookup('csv')}>Export CSV</button>
+                  </div>
+                </div>
+                {threatLookupNotice && <p className="threat-search-notice" role="status">{threatLookupNotice}</p>}
+                {threatLookupResult.type === 'ip' ? (
+                  <>
+                    <p className="threat-result-source">Source: <a href={threatLookupResult.data.sourceUrl} target="_blank" rel="noreferrer">IPsum public blocklist aggregation ↗</a></p>
+                    {threatLookupResult.data.found && <p className="threat-result-consensus">{threatLookupResult.data.consensus}+ source lists in the current IPsum snapshot</p>}
+                    {threatLookupResult.data.stale && <p className="threat-search-notice">Using a cached IPsum snapshot; the latest publisher check failed or is not available.</p>}
+                    <div className="threat-result-times">
+                      <span>Provider snapshot published<strong>{formatDate(threatLookupResult.data.publishedAt)}</strong></span>
+                      <span>Dashboard feed check<strong>{formatDate(threatLookupResult.data.checkedAt)}</strong></span>
+                      <span>Per-IP report time<strong>Not provided by IPsum</strong></span>
+                    </div>
+                    <p className="threat-search-disclaimer result-disclaimer">IPsum supplies aggregated IP reputation, not individual incident reports. Its snapshot time is not an observation time for this IP.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="threat-result-source">Source: <a href={threatLookupResult.data.sourceUrl} target="_blank" rel="noreferrer">OpenPhish Community Feed ↗</a></p>
+                    <div className="threat-result-times">
+                      <span>Dashboard feed retrieval<strong>{formatDate(threatLookupResult.data.retrievedAt)}</strong></span>
+                      <span>Individual report times<strong>Not provided in this feed</strong></span>
+                    </div>
+                    {threatLookupResult.data.error && <div className="events-error" role="status">Could not refresh OpenPhish ({threatLookupResult.data.error}); results below use a cached feed retrieved at {formatDate(threatLookupResult.data.retrievedAt)}.</div>}
+                    {threatLookupResult.data.stale && !threatLookupResult.data.error && <p className="threat-search-notice">Showing a cached OpenPhish snapshot retrieved at {formatDate(threatLookupResult.data.retrievedAt)}.</p>}
+                    <div className="threat-match-list">
+                      {threatLookupResult.data.matches.length
+                        ? <><strong>Showing up to {threatSearchInfo.maxMatches} matching URL indicator{threatLookupResult.data.matches.length === 1 ? '' : 's'}</strong><ul>{threatLookupResult.data.matches.map((match) => <li key={match}><code>{match}</code><span>Report time unavailable</span></li>)}</ul></>
+                        : <p>No matching host was present in the checked OpenPhish snapshot. Feed absence does not establish that a domain is safe.</p>}
+                    </div>
+                    <p className="threat-search-disclaimer result-disclaimer">Matched URLs are displayed as text, not linked, to avoid accidentally opening a reported phishing destination. Matching a subdomain includes its full parent-domain boundary, not lookalike suffixes.</p>
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="events-panel vulnerability-panel" id="vulnerability-panel" aria-labelledby="vulnerability-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="vulnerability-title">Vulnerability intelligence</h2><p>Recent CVEs published by NVD · not matched against installed assets</p></div>
+              <div className="events-heading-actions">
+                <span>{vulnerabilityCheckedAt ? `${vulnerabilityStale ? 'Cached · checked' : 'Checked'} ${formatDate(vulnerabilityCheckedAt)}` : vulnerabilityLoading ? 'Loading NVD…' : 'Feed not checked'}</span>
+                <button onClick={refreshVulnerabilities} disabled={vulnerabilityLoading || vulnerabilityRetrySeconds > 0}>{vulnerabilityLoading ? 'Checking…' : vulnerabilityRetrySeconds > 0 ? `Retry in ${vulnerabilityRetrySeconds}s` : 'Refresh CVEs'}</button>
+              </div>
+            </div>
+            <p className="vulnerability-disclaimer">A CVE listing does not establish that your systems use an affected product or version. NVD data is public vulnerability information, not evidence of exploitation or a security incident in this environment. Product/version coverage may be incomplete or unavailable.</p>
+            {vulnerabilityError && <div className="events-error" role="alert">Could not refresh NVD: {vulnerabilityError}{vulnerabilities.length > 0 && ' Showing the last successful cached results.'}</div>}
+            <div className="vulnerability-controls">
+              <label className="vulnerability-search">Search CVEs, descriptions, vendors, products, versions
+                <input type="search" value={vulnerabilitySearch} onChange={(event) => setVulnerabilitySearch(event.target.value)} placeholder="e.g. CVE-2026-1234 or vendor / product" />
+              </label>
+              <label>CVSS severity
+                <select value={vulnerabilitySeverity} onChange={(event) => setVulnerabilitySeverity(event.target.value)}>
+                  <option value="all">All severities</option>
+                  <option value="CRITICAL">Critical</option>
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                  <option value="NONE">None</option>
+                  <option value="UNKNOWN">Not scored</option>
+                </select>
+              </label>
+            </div>
+            <div className="vulnerability-results-summary">
+              <span>{formatNumber(filteredVulnerabilities.length)} shown · {formatNumber(vulnerabilityTotal)} NVD results in the last {vulnerabilityIntelInfo.queryWindowDays} days</span>
+              {vulnerabilityTotal > vulnerabilities.length && <span>Latest {formatNumber(vulnerabilities.length)} fetched · use the NVD source link for complete results</span>}
+            </div>
+            <div className="vulnerability-list">
+              {filteredVulnerabilities.length ? filteredVulnerabilities.map((vulnerability) => (
+                <article className="vulnerability-card" key={vulnerability.id}>
+                  <div className="vulnerability-card-heading">
+                    <div><a className="vulnerability-id" href={vulnerability.sourceUrl} target="_blank" rel="noreferrer">{vulnerability.id} ↗</a>
+                      {vulnerability.status && <span className="vulnerability-status">{vulnerability.status}</span>}</div>
+                    <span className={`cvss-badge severity-${vulnerability.metrics.severity.toLowerCase()}`}>
+                      {vulnerability.metrics.score === null ? 'CVSS N/A' : `${vulnerability.metrics.severity} · ${vulnerability.metrics.score.toFixed(1)}`}
+                      {vulnerability.metrics.version && <small>CVSS {vulnerability.metrics.version}</small>}
+                    </span>
+                  </div>
+                  <p className="vulnerability-description">{vulnerability.description}</p>
+                  <div className="vulnerability-dates">
+                    <span>Published <strong>{formatVulnerabilityDate(vulnerability.publishedAt)}</strong></span>
+                    <span>Modified <strong>{formatVulnerabilityDate(vulnerability.modifiedAt)}</strong></span>
+                  </div>
+                  <details className="vulnerability-details">
+                    <summary>Products, version ranges &amp; remediation references</summary>
+                    <div className="vulnerability-detail-body">
+                      <div><h3>Affected products / versions listed by NVD</h3>
+                        {vulnerability.affectedProducts.length
+                          ? <ul>{vulnerability.affectedProducts.map((product, index) => <li key={`${product.vendor}-${product.product}-${index}`}><strong>{product.vendor} / {product.product}</strong><span>{product.versionRange}</span></li>)}</ul>
+                          : <p>NVD did not provide affected product configurations for this record.</p>}
+                      </div>
+                      <div><h3>Remediation guidance &amp; vendor advisories</h3>
+                        {vulnerability.remediationReferences.length
+                          ? <ul>{vulnerability.remediationReferences.map((reference) => <li key={reference.url}><a href={reference.url} target="_blank" rel="noreferrer">{reference.tags.join(', ') || 'Advisory or patch'} ↗</a></li>)}</ul>
+                          : <p>No vendor advisory, patch, or mitigation reference was tagged by NVD. Check the CVE and vendor sources before acting.</p>}
+                      </div>
+                      {vulnerability.metrics.vector && <p className="cvss-vector">CVSS vector: <code>{vulnerability.metrics.vector}</code></p>}
+                    </div>
+                  </details>
+                  <div className="vulnerability-card-footer"><span>Source: NVD</span>
+                    <div>{vulnerability.references.filter((reference) => !vulnerability.remediationReferences.some((remediation) => remediation.url === reference.url)).slice(0, 3).map((reference) => <a key={reference.url} href={reference.url} target="_blank" rel="noreferrer">Reference ↗</a>)}</div>
+                  </div>
+                </article>
+              )) : <div className="events-empty">{vulnerabilityLoading && !vulnerabilities.length ? 'Loading recent vulnerabilities from NVD…' : vulnerabilityError && !vulnerabilities.length ? 'NVD is unavailable and there is no cached vulnerability snapshot.' : vulnerabilitySearch || vulnerabilitySeverity !== 'all' ? 'No CVEs match the current search and severity filters.' : vulnerabilityTotal > 0 ? 'NVD returned results, but none included the minimum CVE fields required for display.' : 'NVD reported no published CVEs for the selected recent window.'}</div>}
+            </div>
+            <div className="vulnerability-source"><a href={vulnerabilityIntelInfo.source} target="_blank" rel="noreferrer">NVD CVE database ↗</a><span>Public API · {vulnerabilityIntelInfo.queryWindowDays}-day publication window · refreshes every {vulnerabilityIntelInfo.refreshMinutes / 60} hours · up to {vulnerabilityIntelInfo.resultsPerPage} newest results</span></div>
           </section>
 
           <section className="bottom-grid">

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadCachedGlobalEvents } from '../src/globalEvents.js'
+import { loadCachedGlobalEvents, loadGlobalEvents } from '../src/globalEvents.js'
 import { loadCachedGlobalNews } from '../src/globalNews.js'
 import { readJsonCache, writeJsonCache } from '../src/localCache.js'
 
@@ -79,5 +79,37 @@ test('storage failures do not prevent the public feeds from being used', () => {
   } finally {
     globalThis.window = previousWindow
     console.warn = previousWarn
+  }
+})
+
+test('USGS records dashboard retrieval separately from feed-generation time', async () => {
+  const previousWindow = globalThis.window
+  const previousFetch = globalThis.fetch
+  const previousNow = Date.now
+  const values = new Map()
+  const retrievedAt = 1700000001234
+  globalThis.window = {
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    localStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+    },
+  }
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ metadata: { generated: 1700000000000 }, features: [] }),
+  })
+  Date.now = () => retrievedAt
+
+  try {
+    const result = await loadGlobalEvents()
+    assert.equal(result.updatedAt, 1700000000000)
+    assert.equal(result.retrievedAt, retrievedAt)
+    assert.equal(JSON.parse(values.get('sentinel-global-events-v1')).retrievedAt, retrievedAt)
+  } finally {
+    globalThis.window = previousWindow
+    globalThis.fetch = previousFetch
+    Date.now = previousNow
   }
 })
