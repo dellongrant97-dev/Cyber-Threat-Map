@@ -11,6 +11,7 @@ test('production CSP allows only app and required providers without unsafe scrip
     "script-src-attr 'none'",
     "style-src-attr 'unsafe-inline'",
     "style-src-elem 'self' https://fonts.googleapis.com",
+    "img-src 'self' https://ichef.bbci.co.uk",
     "object-src 'none'",
     "base-uri 'self'",
     "frame-src 'none'",

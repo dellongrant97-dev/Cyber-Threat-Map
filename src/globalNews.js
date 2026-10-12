@@ -76,8 +76,19 @@ function findHeadlineLocation(text) {
 }
 
 function cleanText(value) {
-  const document = new DOMParser().parseFromString(value ?? '', 'text/html')
+  const document = new DOMParser().parseFromString(typeof value === 'string' ? value : '', 'text/html')
   return document.body.textContent.replace(/\s+/g, ' ').trim()
+}
+
+function getSafeBbcImageUrl(value) {
+  if (typeof value !== 'string') return ''
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.hostname !== 'ichef.bbci.co.uk' || url.username || url.password) return ''
+    return url.href
+  } catch {
+    return ''
+  }
 }
 
 function getSafeBbcStoryUrl(value) {
@@ -99,6 +110,7 @@ function isValidNewsCache(cache) {
       && typeof article.title === 'string'
       && typeof article.summary === 'string'
       && getSafeBbcStoryUrl(article.url) === article.url
+      && (article.imageUrl === undefined || article.imageUrl === '' || getSafeBbcImageUrl(article.imageUrl) === article.imageUrl)
       && Number.isFinite(article.publishedAt)
       && (!article.location || (
         typeof article.location.name === 'string'
@@ -123,6 +135,7 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
     const title = textCleaner(item?.title)
     const summary = textCleaner(item?.description)
     const link = getSafeBbcStoryUrl(item?.link)
+    const imageUrl = getSafeBbcImageUrl(item?.thumbnail || item?.enclosure?.thumbnail || item?.enclosure?.link)
     const rawPublishedAt = item?.pubDate
     const explicitTimezone = typeof rawPublishedAt === 'string' && /(?:Z|GMT|UTC|[+-]\d{2}:?\d{2})$/i.test(rawPublishedAt.trim())
     const publishedAt = explicitTimezone
@@ -143,6 +156,9 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
       title,
       summary,
       url: link,
+      imageUrl,
+      publisher: 'BBC News',
+      category: 'World news',
       publishedAt,
       location,
       locationBasis: location ? (titleLocation ? 'headline' : 'summary') : null,

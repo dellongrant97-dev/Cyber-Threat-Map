@@ -151,7 +151,50 @@ function projectLocation(location) {
   }
 }
 
+function NewsDetailImage({ article }) {
+  const [failed, setFailed] = useState(false)
+
+  if (!article.imageUrl || failed) {
+    return <div className="news-detail-image-placeholder" role="img" aria-label="No article image available"><span>WORLD NEWS</span><strong>Image unavailable</strong></div>
+  }
+
+  return <img className="news-detail-image" src={article.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+}
+
+function NewsDetailPanel({ article, onClose }) {
+  const locationLabel = article.location
+    ? `${article.location.name}${article.location.continent ? ` · ${article.location.continent}` : ''}`
+    : 'No reliable location match available'
+
+  return (
+    <aside className="news-detail-panel" aria-labelledby="news-detail-title">
+      <div className="news-detail-heading">
+        <span><i className="news-legend-dot" /> NEWS DETAIL</span>
+        <button type="button" className="news-detail-close" onClick={onClose} aria-label="Close news details">×</button>
+      </div>
+      <NewsDetailImage article={article} />
+      <div className="news-detail-content">
+        <span className="news-detail-category">{article.category || 'World news'}</span>
+        <h3 id="news-detail-title">{article.title}</h3>
+        <p className="news-detail-summary">{article.summary || 'No summary was provided by the publisher. Open the original report for more information.'}</p>
+        <dl className="news-detail-metadata">
+          <div><dt>Country / region</dt><dd>{locationLabel}</dd></div>
+          <div><dt>Location quality</dt><dd>{article.location ? `Approximate, matched in ${article.locationBasis}` : 'Not available'}</dd></div>
+          <div><dt>Category</dt><dd>{article.category || 'World news'}</dd></div>
+          <div><dt>Published</dt><dd>{Number.isFinite(article.publishedAt) ? `${formatNewsTime(article.publishedAt)} UTC` : 'Not provided by publisher'}</dd></div>
+          <div><dt>Publisher</dt><dd>{article.publisher || 'BBC News'}</dd></div>
+        </dl>
+        <a className="news-detail-source-link" href={article.url} target="_blank" rel="noopener noreferrer">
+          Read the original report <Icon name="arrow" size={13} />
+        </a>
+        <p className="news-detail-disclaimer">News locations are approximate text matches, not verified event boundaries or threat indicators.</p>
+      </div>
+    </aside>
+  )
+}
+
 function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }) {
+  const svgRef = useRef(null)
   const visiblePoints = indicators
     .map((point) => ({ ...point, ...projectLocation(point) }))
   const visibleEvents = showEvents ? events.map((event) => ({ ...event, ...projectLocation(event) })) : []
@@ -160,8 +203,40 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     ...projectLocation(article.location),
   })) : []
 
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return undefined
+    const article = news.find((item) => item.id === selectedNewsId && item.location)
+    const zoom = article ? (article.location.precision === 'city' ? 2.6 : 2.1) : 1
+    const width = 1000 / zoom
+    const height = 500 / zoom
+    const focus = article ? projectLocation(article.location) : { x: 500, y: 250 }
+    const target = {
+      x: Math.max(0, Math.min(1000 - width, focus.x - width / 2)),
+      y: Math.max(0, Math.min(500 - height, focus.y - height / 2)),
+      width,
+      height,
+    }
+    const current = (svg.getAttribute('viewBox') || '0 0 1000 500').split(/\s+/).map(Number)
+    const start = { x: current[0], y: current[1], width: current[2], height: current[3] }
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const duration = reducedMotion ? 0 : 600
+    let frame = 0
+    let startTime
+    const animate = (time) => {
+      if (startTime === undefined) startTime = time
+      const progress = duration ? Math.min(1, (time - startTime) / duration) : 1
+      const eased = 1 - (1 - progress) ** 3
+      const viewBox = ['x', 'y', 'width', 'height'].map((key) => start[key] + (target[key] - start[key]) * eased)
+      svg.setAttribute('viewBox', viewBox.join(' '))
+      if (progress < 1) frame = window.requestAnimationFrame(animate)
+    }
+    frame = window.requestAnimationFrame(animate)
+    return () => window.cancelAnimationFrame(frame)
+  }, [news, selectedNewsId])
+
   return (
-    <svg className="world-map" viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
+    <svg ref={svgRef} className="world-map" viewBox="0 0 1000 500" role="group" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
       <title id="map-title">Public threat intelligence and global events</title>
       <desc id="map-desc">A dotted 2D world map with approximate hosting locations for suspicious IP indicators and, when enabled, independently sourced USGS earthquake events of magnitude 4.5 or greater.</desc>
       <defs>
@@ -172,14 +247,15 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
           <circle cx="1.2" cy="1.2" r="1.05" fill="#00f28c" />
         </pattern>
       </defs>
-      <rect width="1000" height="500" fill="url(#map-dots)" opacity=".42" />
-      <g className="graticules">
-        <path d="M0 125H1000M0 250H1000M0 375H1000" />
-        <path d="M250 0v500M500 0v500M750 0v500" />
-        <ellipse cx="500" cy="250" rx="470" ry="210" />
-      </g>
-      <g className="continents"><path d={landShapes} /></g>
-      <g className="map-points">
+      <g className="map-zoom-content">
+        <rect width="1000" height="500" fill="url(#map-dots)" opacity=".42" />
+        <g className="graticules">
+          <path d="M0 125H1000M0 250H1000M0 375H1000" />
+          <path d="M250 0v500M500 0v500M750 0v500" />
+          <ellipse cx="500" cy="250" rx="470" ry="210" />
+        </g>
+        <g className="continents"><path d={landShapes} /></g>
+        <g className="map-points">
         {visiblePoints.map((point) => (
           <g
             className={`map-point point-${point.consensus >= 6 ? 'high' : 'medium'} ${selectedIp === point.ip ? 'point-selected' : ''}`}
@@ -203,8 +279,8 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
             <title>{point.ip} · {point.consensus}+ source lists · approximate IP location: {point.city ? `${point.city}, ` : ''}{point.country} · not a confirmed attack origin</title>
           </g>
         ))}
-      </g>
-      <g className="event-points">
+        </g>
+        <g className="event-points">
         {visibleEvents.map((event) => (
           <g
             className={`event-point ${selectedEventId === event.id ? 'event-point-selected' : ''}`}
@@ -226,8 +302,8 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
             <title>M{event.magnitude.toFixed(1)} earthquake · {event.place} · {formatEventTime(event.occurredAt)} UTC · USGS</title>
           </g>
         ))}
-      </g>
-      <g className="news-points">
+        </g>
+        <g className="news-points">
         {visibleNews.map((article) => (
           <g
             className={`news-point ${article.location.precision === 'country' ? 'news-point-country' : ''} ${selectedNewsId === article.id ? 'news-point-selected' : ''}`}
@@ -250,6 +326,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
             <title>{article.location.name} · approx. {article.location.precision} match · {article.title} · BBC News</title>
           </g>
         ))}
+      </g>
       </g>
       <g className="map-coordinates">
         <text x="22" y="28">PUBLIC THREAT INTELLIGENCE</text>
@@ -1026,12 +1103,16 @@ function App() {
     })
   }
 
-  const selectNews = (article) => {
-    setSelectedNewsId(selectedNewsId === article.id ? null : article.id)
-    if (!article.location) return
+  const selectNews = (articleOrId) => {
+    const article = typeof articleOrId === 'string'
+      ? newsArticles.find((item) => item.id === articleOrId)
+      : articleOrId
+    if (!article) return
+    setSelectedNewsId(article.id)
     setShowNews(true)
     document.getElementById('threat-map')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+  const selectedNewsArticle = newsArticles.find((article) => article.id === selectedNewsId) ?? null
 
   return (
     <main className="app-shell">
@@ -1127,7 +1208,7 @@ function App() {
               {consensusFilters.map((option) => <button key={option.id} className={`filter-chip ${filter === option.id ? 'selected' : ''}`} aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.id === 'high' ? <i className="confidence-dot high" /> : option.id === 'medium' ? <i className="confidence-dot medium" /> : <span className="filter-total">{feed ? formatNumber(filteredIndicators.length) : '—'}</span>}{option.label}</button>)}
               </div>
               <button className={`filter-chip event-filter ${showEarthquakes ? 'selected' : ''}`} aria-pressed={showEarthquakes} onClick={() => setShowEarthquakes((current) => !current)}><i className="event-legend-dot" />Earthquakes {eventsLoading ? '…' : globalEvents.length ? `${globalEvents.length}` : ''}</button>
-              <button className={`filter-chip news-filter ${showNews ? 'selected' : ''}`} aria-pressed={showNews} onClick={() => setShowNews((current) => !current)}><i className="news-legend-dot" />World news {newsLoading ? '…' : newsArticles.length ? `${newsArticles.length}` : ''}</button>
+              <button className={`filter-chip news-filter ${showNews ? 'selected' : ''}`} aria-pressed={showNews} onClick={() => { if (showNews) setSelectedNewsId(null); setShowNews((current) => !current) }}><i className="news-legend-dot" />World news {newsLoading ? '…' : newsArticles.length ? `${newsArticles.length}` : ''}</button>
               <span className="map-filter-spacer" />
               <span className="map-updated">{newsUpdatedAt ? `News checked ${formatNewsTime(newsUpdatedAt)}${newsStale ? ' · cached' : ''}` : newsLoading ? 'Loading world news…' : 'World news unavailable'}</span>
             </div>
@@ -1161,7 +1242,10 @@ function App() {
                 );
               })() : <span className="news-strip-empty">{newsLoading ? 'Loading mapped headlines…' : 'No headlines with confidently matched locations are available.'}</span>}
             </div>
-            <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? mapView === '3d' ? <GlobeMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
+            <div className={`map-visualization ${selectedNewsArticle ? 'map-visualization-selected' : ''}`}>
+              <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? mapView === '3d' ? <GlobeMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={selectNews} /> : <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={selectNews} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
+              {selectedNewsArticle && <NewsDetailPanel article={selectedNewsArticle} onClose={() => setSelectedNewsId(null)} />}
+            </div>
             <div className="map-footer"><div className="legend"><span className="legend-title">MAP KEY</span><span><i className="confidence-dot high" /> 6+ source lists</span><span><i className="confidence-dot medium" /> 3-5 source lists</span><span><i className="event-legend-dot" /> USGS earthquake</span><span><i className="news-legend-dot" /> BBC news area</span></div><span className="map-disclaimer">News areas are approximate headline place matches.</span></div>
           </section>
 
