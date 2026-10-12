@@ -6,7 +6,7 @@ export const CONTENT_SECURITY_POLICY = [
   "style-src-attr 'unsafe-inline'",
   "script-src-attr 'none'",
   "font-src 'self' https://fonts.gstatic.com",
-  "img-src 'self'",
+  "img-src 'self' https://ichef.bbci.co.uk",
   "connect-src 'self' https://api.github.com https://raw.githubusercontent.com https://ipapi.co https://earthquake.usgs.gov https://api.rss2json.com https://services.nvd.nist.gov",
   "object-src 'none'",
   "frame-src 'none'",
