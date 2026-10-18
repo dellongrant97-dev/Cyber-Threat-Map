@@ -5,7 +5,7 @@ const RSS_CONVERTER = 'https://api.rss2json.com/v1/api.json'
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
-const CACHE_KEY = 'sentinel-global-news-v3'
+const CACHE_KEY = 'sentinel-global-news-v4'
 
 const headlineLocations = [
   { name: 'New York City, United States', latitude: 40.7128, longitude: -74.006, precision: 'city', terms: ['New York City', "New York City's", 'New York', 'NYC', 'Bronx', 'Marble Hill'] },
@@ -124,7 +124,7 @@ function getDescriptionImageSources(html) {
     .map((match) => match[1] ?? match[2] ?? match[3] ?? '')
 }
 
-function getNewsImageUrl(item) {
+function getNewsImageUrls(item) {
   const candidates = [
     ...collectImageUrls(item?.thumbnail),
     ...collectImageUrls(item?.['media:thumbnail']),
@@ -133,11 +133,9 @@ function getNewsImageUrl(item) {
     ...collectImageUrls(item?.image),
     ...getDescriptionImageSources(item?.description),
   ]
-  for (const candidate of candidates) {
-    const safeUrl = getSafeBbcImageUrl(candidate)
-    if (safeUrl) return safeUrl
-  }
-  return ''
+  return [...new Set(candidates
+    .map((candidate) => getSafeBbcImageUrl(candidate))
+    .filter(Boolean))]
 }
 
 function isValidNewsCache(cache) {
@@ -149,6 +147,7 @@ function isValidNewsCache(cache) {
       && typeof article.summary === 'string'
       && getSafeBbcStoryUrl(article.url) === article.url
       && (!article.imageUrl || getSafeBbcImageUrl(article.imageUrl) === article.imageUrl)
+      && (!article.imageUrls || (Array.isArray(article.imageUrls) && article.imageUrls.every((url) => getSafeBbcImageUrl(url) === url)))
       && Number.isFinite(article.publishedAt)
       && (!article.location || (
         typeof article.location.name === 'string'
@@ -192,7 +191,8 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
       id: link,
       title,
       summary,
-      imageUrl: getNewsImageUrl(item),
+      imageUrls: getNewsImageUrls(item),
+      imageUrl: getNewsImageUrls(item)[0] || '',
       url: link,
       publishedAt,
       location,
