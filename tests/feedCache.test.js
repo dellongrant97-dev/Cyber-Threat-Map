@@ -28,7 +28,7 @@ test('feed caches restore validated results and label them stale until refreshed
         place: 'Sample location',
       }],
     })
-    writeJsonCache('sentinel-global-news-v1', {
+    writeJsonCache('sentinel-global-news-v2', {
       updatedAt: checkedAt,
       stale: false,
       articles: [{
