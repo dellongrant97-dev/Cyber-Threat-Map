@@ -166,7 +166,8 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     : 'scale(1) translate(0px, 0px)'
 
   return (
-    <svg className="world-map" viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
+    <>
+      <svg className="world-map" viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
       <title id="map-title">Public threat intelligence and global events</title>
       <desc id="map-desc">A dotted 2D world map with approximate hosting locations for suspicious IP indicators and, when enabled, independently sourced USGS earthquake events of magnitude 4.5 or greater.</desc>
       <defs>
@@ -176,9 +177,6 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         <pattern id="land-dots" width="3.6" height="3.6" patternUnits="userSpaceOnUse">
           <circle cx="1.2" cy="1.2" r="1.05" fill="#00f28c" />
         </pattern>
-        <clipPath id="selected-news-image-clip" clipPathUnits="userSpaceOnUse">
-          <rect x="660" y="278" width="310" height="112" rx="5" />
-        </clipPath>
       </defs>
       <g className="map-zoom-layer" style={{ transform: newsZoomTransform, transformOrigin: '0 0', transition: typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'none' : 'transform 650ms cubic-bezier(0.2, 0.75, 0.25, 1)' }}>
       <rect width="1000" height="500" fill="url(#map-dots)" opacity=".42" />
@@ -261,37 +259,33 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         ))}
       </g>
       </g>
-      {selectedNewsPoint && (
-        <g className="news-zoom-card" role="group" aria-label={`Selected news story: ${selectedNewsPoint.title}`} pointerEvents="none">
-          <rect x="650" y="268" width="330" height="202" rx="8" fill="#06110d" stroke="#00f28c" strokeWidth="1.5" />
-          {selectedNewsPoint.imageUrl ? (
-            <image
-              href={selectedNewsPoint.imageUrl}
-              x="660"
-              y="278"
-              width="310"
-              height="112"
-              preserveAspectRatio="xMidYMid slice"
-              clipPath="url(#selected-news-image-clip)"
-              aria-label={`BBC news image for ${selectedNewsPoint.title}`}
-            />
-          ) : (
-            <g>
-              <rect x="660" y="278" width="310" height="112" rx="5" fill="#0b2418" />
-              <text x="815" y="334" textAnchor="middle" fill="#83b89c" fontSize="11" letterSpacing="1">IMAGE NOT PROVIDED BY FEED</text>
-            </g>
-          )}
-          <text x="662" y="407" fill="#00f28c" fontSize="10" fontWeight="700">{selectedNewsPoint.location.name.toUpperCase()}</text>
-          <text x="662" y="426" fill="#f0fff6" fontSize="12" fontWeight="600">{selectedNewsPoint.title.slice(0, 48)}{selectedNewsPoint.title.length > 48 ? '…' : ''}</text>
-          <text x="662" y="449" fill="#8eab9a" fontSize="10">BBC NEWS · APPROXIMATE LOCATION MATCH</text>
-        </g>
-      )}
       <g className="map-coordinates">
         <text x="22" y="28">PUBLIC THREAT INTELLIGENCE</text>
         <text x="22" y="47">{visiblePoints.length} IP LOCATIONS · {visibleEvents.length} EARTHQUAKES · {visibleNews.length} NEWS AREAS</text>
         <text x="978" y="476" textAnchor="end">APPROXIMATE LOCATIONS · DISTINCT DATA LAYERS</text>
       </g>
-    </svg>
+      </svg>
+      {selectedNewsPoint && (
+        <aside className="news-zoom-card" role="group" aria-label={`Selected news story: ${selectedNewsPoint.title}`}>
+          {selectedNewsPoint.imageUrl ? (
+            <img
+              className="news-zoom-card-image"
+              src={selectedNewsPoint.imageUrl}
+              alt={`BBC news image for ${selectedNewsPoint.title}`}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="news-zoom-placeholder">IMAGE NOT PROVIDED BY FEED</div>
+          )}
+          <div className="news-zoom-card-copy">
+            <span className="news-zoom-card-location">{selectedNewsPoint.location.name}</span>
+            <strong>{selectedNewsPoint.title}</strong>
+            <small>BBC NEWS · APPROXIMATE LOCATION MATCH</small>
+          </div>
+        </aside>
+      )}
+    </>
   )
 }
 
