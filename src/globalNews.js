@@ -5,7 +5,7 @@ const RSS_CONVERTER = 'https://api.rss2json.com/v1/api.json'
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
-const CACHE_KEY = 'sentinel-global-news-v2'
+const CACHE_KEY = 'sentinel-global-news-v3'
 
 const headlineLocations = [
   { name: 'New York City, United States', latitude: 40.7128, longitude: -74.006, precision: 'city', terms: ['New York City', "New York City's", 'New York', 'NYC', 'Bronx', 'Marble Hill'] },
@@ -98,8 +98,7 @@ function getSafeBbcImageUrl(value) {
     const host = url.hostname.toLowerCase()
     const isBbcImageHost = host === 'bbci.co.uk' || host.endsWith('.bbci.co.uk')
       || host === 'bbc.co.uk' || host.endsWith('.bbc.co.uk')
-    const looksLikeImage = /\.(?:avif|gif|jpe?g|png|webp)$/i.test(url.pathname)
-    if (url.protocol !== 'https:' || !isBbcImageHost || !looksLikeImage || url.username || url.password) return ''
+    if (url.protocol !== 'https:' || !isBbcImageHost || url.pathname === '/' || url.username || url.password) return ''
     return url.href
   } catch {
     return ''
