@@ -121,10 +121,8 @@ function collectImageUrls(value) {
 
 function getDescriptionImageSources(html) {
   const tag = String(html ?? '').match(/<img\b[^>]*>/i)?.[0] ?? ''
-  return ['src', 'data-src', 'data-original'].flatMap((attribute) => {
-    const match = tag.match(new RegExp('\\\\b' + attribute + '\\\\s*=\\\\s*(?:"([^"]*)"|\\'([^\\']*)\\'|([^\\\\s"\\'=<>\\x60]+))', 'i'))
-    return match ? [match[1] ?? match[2] ?? match[3] ?? ''] : []
-  })
+  return [...tag.matchAll(/\b(?:src|data-src|data-original)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>\x60]+))/gi)]
+    .map((match) => match[1] ?? match[2] ?? match[3] ?? '')
 }
 
 function getNewsImageUrl(item) {
