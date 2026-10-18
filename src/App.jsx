@@ -162,8 +162,8 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
   const selectedNewsPoint = visibleNews.find((article) => article.id === selectedNewsId)
   const newsZoom = selectedNewsPoint?.location.precision === 'city' ? 2.8 : 1.8
   const newsZoomTransform = selectedNewsPoint
-    ? `translate(500 250) scale(${newsZoom}) translate(-${selectedNewsPoint.x} -${selectedNewsPoint.y})`
-    : 'translate(0 0)'
+    ? `scale(${newsZoom}) translate(${500 / newsZoom - selectedNewsPoint.x}px, ${250 / newsZoom - selectedNewsPoint.y}px)`
+    : 'scale(1) translate(0px, 0px)'
 
   return (
     <svg className="world-map" viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
@@ -177,7 +177,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
           <circle cx="1.2" cy="1.2" r="1.05" fill="#00f28c" />
         </pattern>
       </defs>
-      <g className="map-zoom-layer" transform={newsZoomTransform}>
+      <g className="map-zoom-layer" style={{ transform: newsZoomTransform, transformOrigin: '0 0', transition: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'none' : 'transform 650ms cubic-bezier(0.2, 0.75, 0.25, 1)' }}>
       <rect width="1000" height="500" fill="url(#map-dots)" opacity=".42" />
       <g className="graticules">
         <path d="M0 125H1000M0 250H1000M0 375H1000" />
