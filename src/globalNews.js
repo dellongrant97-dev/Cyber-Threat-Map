@@ -98,27 +98,43 @@ function getSafeBbcImageUrl(value) {
     const host = url.hostname.toLowerCase()
     const isBbcImageHost = host === 'bbci.co.uk' || host.endsWith('.bbci.co.uk')
       || host === 'bbc.co.uk' || host.endsWith('.bbc.co.uk')
-    if (url.protocol !== 'https:' || !isBbcImageHost || url.username || url.password) return ''
+    const looksLikeImage = /\.(?:avif|gif|jpe?g|png|webp)$/i.test(url.pathname)
+    if (url.protocol !== 'https:' || !isBbcImageHost || !looksLikeImage || url.username || url.password) return ''
     return url.href
   } catch {
     return ''
   }
 }
 
-function getFirstImageSource(html) {
-  const imageTag = String(html ?? '').match(/<img\b[^>]*>/i)?.[0] ?? ''
-  const source = imageTag.match(/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>\x60]+))/i)
-  return source?.[1] ?? source?.[2] ?? source?.[3] ?? ''
+function collectImageUrls(value) {
+  if (typeof value === 'string') return [value]
+  if (!value || typeof value !== 'object') return []
+  return [
+    value.url,
+    value.src,
+    value.href,
+    value.$?.url,
+    value.$?.src,
+    value.$?.href,
+  ].flatMap((candidate) => typeof candidate === 'string' ? [candidate] : [])
+}
+
+function getDescriptionImageSources(html) {
+  const tag = String(html ?? '').match(/<img\b[^>]*>/i)?.[0] ?? ''
+  return ['src', 'data-src', 'data-original'].flatMap((attribute) => {
+    const match = tag.match(new RegExp('\\\\b' + attribute + '\\\\s*=\\\\s*(?:"([^"]*)"|\\'([^\\']*)\\'|([^\\\\s"\\'=<>\\x60]+))', 'i'))
+    return match ? [match[1] ?? match[2] ?? match[3] ?? ''] : []
+  })
 }
 
 function getNewsImageUrl(item) {
   const candidates = [
-    item?.thumbnail,
-    item?.thumbnail?.src,
-    item?.enclosure?.link,
-    item?.enclosure?.url,
-    item?.image,
-    getFirstImageSource(item?.description),
+    ...collectImageUrls(item?.thumbnail),
+    ...collectImageUrls(item?.['media:thumbnail']),
+    ...collectImageUrls(item?.['media:content']),
+    ...collectImageUrls(item?.enclosure),
+    ...collectImageUrls(item?.image),
+    ...getDescriptionImageSources(item?.description),
   ]
   for (const candidate of candidates) {
     const safeUrl = getSafeBbcImageUrl(candidate)
