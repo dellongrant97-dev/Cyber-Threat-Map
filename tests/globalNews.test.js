@@ -52,6 +52,18 @@ test('normalizeGlobalNewsItems rejects credentialed and lookalike BBC links', ()
   assert.deepEqual(articles.map((article) => article.url), ['https://www.bbc.co.uk/story'])
 })
 
+
+test('normalizeGlobalNewsItems selects actual BBC image URLs, not article links', () => {
+  const articles = normalizeGlobalNewsItems([
+    item('Picture story in Canada', '2026-10-10T11:00:00Z', {
+      enclosure: { link: 'https://www.bbc.co.uk/news/articles/story', url: 'https://ichef.bbci.co.uk/news/1024/cpsprodpb/example.jpg' },
+      'media:thumbnail': { $: { url: 'https://ichef.bbci.co.uk/news/640/cpsprodpb/thumb.webp' } },
+    }),
+  ], { now, textCleaner: clean })
+
+  assert.equal(articles[0].imageUrl, 'https://ichef.bbci.co.uk/news/640/cpsprodpb/thumb.webp')
+})
+
 test('normalizeGlobalNewsItems limits results and rejects malformed feed data', () => {
   const items = Array.from({ length: 35 }, (_, index) => (
     item(`Story ${index}`, new Date(now - index * 60_000).toISOString())
