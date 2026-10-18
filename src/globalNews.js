@@ -5,7 +5,7 @@ const RSS_CONVERTER = 'https://api.rss2json.com/v1/api.json'
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
-const CACHE_KEY = 'sentinel-global-news-v1'
+const CACHE_KEY = 'sentinel-global-news-v2'
 
 const headlineLocations = [
   { name: 'New York City, United States', latitude: 40.7128, longitude: -74.006, precision: 'city', terms: ['New York City', "New York City's", 'New York', 'NYC', 'Bronx', 'Marble Hill'] },
@@ -91,6 +91,37 @@ function getSafeBbcStoryUrl(value) {
   }
 }
 
+function getSafeBbcImageUrl(value) {
+  if (typeof value !== 'string') return ''
+  try {
+    const url = new URL(value)
+    const host = url.hostname.toLowerCase()
+    const isBbcImageHost = host === 'bbci.co.uk' || host.endsWith('.bbci.co.uk')
+      || host === 'bbc.co.uk' || host.endsWith('.bbc.co.uk')
+    if (url.protocol !== 'https:' || !isBbcImageHost || url.username || url.password) return ''
+    return url.href
+  } catch {
+    return ''
+  }
+}
+
+function getNewsImageUrl(item) {
+  const descriptionDocument = new DOMParser().parseFromString(item?.description ?? '', 'text/html')
+  const candidates = [
+    item?.thumbnail,
+    item?.thumbnail?.src,
+    item?.enclosure?.link,
+    item?.enclosure?.url,
+    item?.image,
+    descriptionDocument.querySelector('img')?.getAttribute('src'),
+  ]
+  for (const candidate of candidates) {
+    const safeUrl = getSafeBbcImageUrl(candidate)
+    if (safeUrl) return safeUrl
+  }
+  return ''
+}
+
 function isValidNewsCache(cache) {
   return Number.isFinite(cache?.updatedAt)
     && Array.isArray(cache.articles)
@@ -99,6 +130,7 @@ function isValidNewsCache(cache) {
       && typeof article.title === 'string'
       && typeof article.summary === 'string'
       && getSafeBbcStoryUrl(article.url) === article.url
+      && (!article.imageUrl || getSafeBbcImageUrl(article.imageUrl) === article.imageUrl)
       && Number.isFinite(article.publishedAt)
       && (!article.location || (
         typeof article.location.name === 'string'
@@ -142,6 +174,7 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
       id: link,
       title,
       summary,
+      imageUrl: getNewsImageUrl(item),
       url: link,
       publishedAt,
       location,
