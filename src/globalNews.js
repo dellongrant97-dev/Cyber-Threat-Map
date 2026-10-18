@@ -105,15 +105,20 @@ function getSafeBbcImageUrl(value) {
   }
 }
 
+function getFirstImageSource(html) {
+  const imageTag = String(html ?? '').match(/<img\b[^>]*>/i)?.[0] ?? ''
+  const source = imageTag.match(/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>\x60]+))/i)
+  return source?.[1] ?? source?.[2] ?? source?.[3] ?? ''
+}
+
 function getNewsImageUrl(item) {
-  const descriptionDocument = new DOMParser().parseFromString(item?.description ?? '', 'text/html')
   const candidates = [
     item?.thumbnail,
     item?.thumbnail?.src,
     item?.enclosure?.link,
     item?.enclosure?.url,
     item?.image,
-    descriptionDocument.querySelector('img')?.getAttribute('src'),
+    getFirstImageSource(item?.description),
   ]
   for (const candidate of candidates) {
     const safeUrl = getSafeBbcImageUrl(candidate)
