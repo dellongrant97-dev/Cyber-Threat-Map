@@ -273,7 +273,6 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
               src={selectedNewsPoint.imageUrl}
               alt={`BBC news image for ${selectedNewsPoint.title}`}
               loading="lazy"
-              referrerPolicy="no-referrer"
             />
           ) : (
             <div className="news-zoom-placeholder">IMAGE NOT PROVIDED BY FEED</div>
