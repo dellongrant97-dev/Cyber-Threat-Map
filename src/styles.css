@@ -318,6 +318,8 @@ h1 > span { color: var(--green); }
 .source-health-card-heading p { margin: 4px 0 0; color: #788582; font-size: 8px; line-height: 1.45; }
 .source-status-badge { display: inline-flex; flex: none; align-items: center; gap: 5px; padding: 3px 5px; border: 1px solid #2e4732; border-radius: 3px; color: #b4ed92; background: #142019; font: 7px var(--mono); white-space: nowrap; }
 .source-status-loading .source-status-badge { border-color: #29444b; color: #9fe5ec; background: #122024; }
+.source-status-delayed .source-status-badge { border-color: #54402c; color: #ffcf87; background: #211a13; }
+.source-health-recovery { margin: 8px 0 0; color: #8caaa1; font-size: 8px; line-height: 1.5; }
 .source-status-stale .source-status-badge, .source-status-error .source-status-badge { border-color: #54402c; color: #ffbd77; background: #211a13; }
 .source-status-offline .source-status-badge { border-color: #573139; color: #ff9aa3; background: #241619; }
 .source-status-empty .source-status-badge, .source-status-idle .source-status-badge { border-color: #334044; color: #aab7b3; background: #141a1c; }

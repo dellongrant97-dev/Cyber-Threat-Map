@@ -1,11 +1,48 @@
-function sourceStatus(source, online) {
+const REFRESH_WINDOWS = {
+  ipsum: 45 * 60 * 1000,
+  usgs: 15 * 60 * 1000,
+  bbc: 45 * 60 * 1000,
+  nvd: 90 * 60 * 1000,
+}
+
+function timestampMs(value) {
+  if (Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function sourceStatus(source, online, now) {
   if (!online) return 'offline'
   if (source.loading) return 'loading'
   if (source.error) return source.hasData || source.lastSuccessAt ? 'stale' : 'error'
   if (source.stale) return 'stale'
   if (!source.attempted) return 'idle'
   if (!source.hasData) return 'empty'
+
+  const lastSuccessMs = timestampMs(source.lastSuccessAt)
+  const refreshWindow = REFRESH_WINDOWS[source.id]
+  if (refreshWindow && lastSuccessMs !== null && now >= lastSuccessMs && now - lastSuccessMs > refreshWindow) {
+    return 'delayed'
+  }
   return 'ready'
+}
+
+function recoveryHint(source, status) {
+  if (status === 'offline') return 'Reconnect to the internet, then use Check now to verify this source.'
+  if (status === 'loading') return 'The request is in progress. Keep this panel open while it completes.'
+  if (status === 'stale') return source.hasData
+    ? 'Showing the last available snapshot. Retry the source check when the connection or provider is available.'
+    : 'The last request failed. Retry when the connection or provider is available.'
+  if (status === 'error') return 'No successful snapshot is available yet. Check the connection or provider status, then retry.'
+  if (status === 'delayed') return 'The last successful check is older than the expected refresh window. Check now to verify it.'
+  if (status === 'idle') return source.id === 'openphish'
+    ? 'This feed is checked only when requested. Use Refresh feed when you need a current lookup.'
+    : 'No request has been recorded in this session yet.'
+  if (status === 'empty') return 'The last request succeeded but returned no displayable records; this is not proof that no activity exists.'
+  return ''
 }
 
 export function buildSourceHealthRows({
@@ -16,6 +53,7 @@ export function buildSourceHealthRows({
   news = {},
   vulnerabilities = {},
   phishing = {},
+  now = Date.now(),
 }) {
   const definitions = [
     {
@@ -116,12 +154,20 @@ export function buildSourceHealthRows({
     },
   ]
 
-  return definitions.map((source) => ({
-    ...source,
-    status: sourceStatus(source, online),
-    stale: Boolean(source.stale || (source.error && (source.hasData || source.lastSuccessAt)) || (!online && (source.hasData || source.lastSuccessAt))),
-    error: !online
-      ? [source.error, 'Browser is offline; a new retrieval cannot be confirmed.'].filter(Boolean).join(' ')
-      : source.error || '',
-  }))
+  return definitions.map((source) => {
+    const status = sourceStatus(source, online, now)
+    const lastSuccessMs = timestampMs(source.lastSuccessAt)
+    const ageMs = lastSuccessMs !== null && now >= lastSuccessMs ? now - lastSuccessMs : null
+    const stale = Boolean(source.stale || (source.error && (source.hasData || source.lastSuccessAt)) || (!online && (source.hasData || source.lastSuccessAt)))
+    return {
+      ...source,
+      status,
+      ageMs,
+      stale,
+      recoveryHint: recoveryHint(source, status),
+      error: !online
+        ? [source.error, 'Browser is offline; a new retrieval cannot be confirmed.'].filter(Boolean).join(' ')
+        : source.error || '',
+    }
+  })
 }
