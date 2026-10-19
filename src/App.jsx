@@ -152,6 +152,7 @@ function projectLocation(location) {
 }
 
 function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }) {
+  const [expandedNewsImage, setExpandedNewsImage] = useState(false)
   const visiblePoints = indicators
     .map((point) => ({ ...point, ...projectLocation(point) }))
   const visibleEvents = showEvents ? events.map((event) => ({ ...event, ...projectLocation(event) })) : []
@@ -160,6 +161,13 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     ...projectLocation(article.location),
   })) : []
   const selectedNewsPoint = visibleNews.find((article) => article.id === selectedNewsId)
+  useEffect(() => { setExpandedNewsImage(false) }, [selectedNewsId])
+  useEffect(() => {
+    if (!expandedNewsImage) return undefined
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setExpandedNewsImage(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [expandedNewsImage])
   const newsZoom = selectedNewsPoint?.location.precision === 'city' ? 2.8 : 1.8
   const newsZoomTransform = selectedNewsPoint
     ? `scale(${newsZoom}) translate(${500 / newsZoom - selectedNewsPoint.x}px, ${250 / newsZoom - selectedNewsPoint.y}px)`
@@ -275,6 +283,11 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
               data-image-candidate-index="0"
               alt={`BBC news image for ${selectedNewsPoint.title}`}
               loading="lazy"
+              role="button"
+              tabIndex={0}
+              aria-label="Expand news thumbnail"
+              onClick={() => setExpandedNewsImage(true)}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpandedNewsImage(true) } }}
               onError={(event) => {
                 const image = event.currentTarget
                 if (image.dataset.imageFallback === 'true') return
@@ -300,9 +313,20 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
           <div className="news-zoom-card-copy">
             <span className="news-zoom-card-location">{selectedNewsPoint.location.name}</span>
             <strong>{selectedNewsPoint.title}</strong>
+            <p className="news-zoom-summary">{selectedNewsPoint.summary || 'BBC has not provided a summary for this story.'}</p>
             <small>BBC NEWS · APPROXIMATE LOCATION MATCH</small>
           </div>
         </aside>
+      )}
+      {expandedNewsImage && selectedNewsPoint?.imageUrl && (
+        <div className="news-image-lightbox" role="dialog" aria-modal="true" aria-label={`Expanded image: ${selectedNewsPoint.title}`} onClick={() => setExpandedNewsImage(false)}>
+          <button className="news-image-lightbox-close" type="button" aria-label="Close expanded image" onClick={() => setExpandedNewsImage(false)}>×</button>
+          <div className="news-image-lightbox-content" onClick={(event) => event.stopPropagation()}>
+            <img src={selectedNewsPoint.imageUrl} alt={`Expanded BBC news image for ${selectedNewsPoint.title}`} />
+            <p>{selectedNewsPoint.title}</p>
+            <small>BBC NEWS · Press Escape or click outside the image to close</small>
+          </div>
+        </div>
       )}
     </>
   )
