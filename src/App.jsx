@@ -10,6 +10,7 @@ import {
 } from './threatIntel.js'
 import { globalEventsInfo, loadCachedGlobalEvents, loadGlobalEvents } from './globalEvents.js'
 import { globalNewsInfo, loadCachedGlobalNews, loadGlobalNews } from './globalNews.js'
+import { cyberNewsInfo, loadCachedCyberNews, loadCyberNews } from './cyberNews.js'
 import { filterIndicators } from './indicatorFilters.js'
 import { loadCachedVulnerabilities, loadVulnerabilities, vulnerabilityIntelInfo } from './vulnerabilityIntel.js'
 import {
@@ -699,6 +700,13 @@ function App() {
   const [openPhishError, setOpenPhishError] = useState('')
   const [openPhishAttempted, setOpenPhishAttempted] = useState(Boolean(openPhishCache))
   const newsLoadingRef = useRef(false)
+  const [cachedCyberNews] = useState(() => loadCachedCyberNews())
+  const [cyberNewsItems, setCyberNewsItems] = useState(cachedCyberNews?.items ?? [])
+  const [cyberNewsUpdatedAt, setCyberNewsUpdatedAt] = useState(cachedCyberNews?.updatedAt ?? null)
+  const [cyberNewsStale, setCyberNewsStale] = useState(cachedCyberNews?.stale ?? false)
+  const [cyberNewsError, setCyberNewsError] = useState('')
+  const [cyberNewsLoading, setCyberNewsLoading] = useState(false)
+  const cyberNewsLoadingRef = useRef(false)
 
   const refreshVulnerabilities = useCallback(async () => {
     if (vulnerabilityLoadingRef.current) return
@@ -821,6 +829,32 @@ function App() {
       setNewsLoading(false)
     }
   }, [])
+
+  const refreshCyberNews = useCallback(async () => {
+    if (cyberNewsLoadingRef.current) return
+    cyberNewsLoadingRef.current = true
+    setCyberNewsLoading(true)
+    try {
+      const result = await loadCyberNews()
+      setCyberNewsItems(result.items)
+      setCyberNewsUpdatedAt(result.updatedAt)
+      setCyberNewsStale(false)
+      setCyberNewsError('')
+    } catch (error) {
+      logClientError('cyber_news_refresh_failed', error)
+      setCyberNewsError(error instanceof Error ? error.message : 'Could not refresh CISA advisories.')
+      setCyberNewsStale(true)
+    } finally {
+      cyberNewsLoadingRef.current = false
+      setCyberNewsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshCyberNews()
+    const timer = window.setInterval(refreshCyberNews, cyberNewsInfo.refreshMinutes * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [refreshCyberNews])
 
   useEffect(() => {
     refreshFeed()
@@ -1422,6 +1456,32 @@ function App() {
               )) : <div className="events-empty">{newsLoading ? 'Loading headlines from BBC World…' : newsError ? 'World news could not be loaded. Retry to check the feed.' : 'No recent world headlines are available.'}</div>}
             </div>
             <div className="news-source"><span>Source: <a href={globalNewsInfo.source} target="_blank" rel="noreferrer">BBC News World</a> · Updated every 15 minutes</span><span>Headlines are independently reported news, not threat intelligence.</span></div>
+          </section>
+
+          <section className="events-panel cyber-advisory-panel" id="cyber-advisories" aria-labelledby="cyber-advisories-title">
+            <div className="panel-heading events-heading">
+              <div><h2 id="cyber-advisories-title">Cybersecurity advisories</h2><p>Official CISA reports and guidance · separate from map-based indicators</p></div>
+              <div className="events-heading-actions">
+                <span>{cyberNewsUpdatedAt ? `${cyberNewsStale ? 'Cached · checked' : 'Checked'} ${formatNewsTime(cyberNewsUpdatedAt)} UTC` : cyberNewsLoading ? 'Loading CISA…' : 'Feed unavailable'}</span>
+                <button onClick={refreshCyberNews} disabled={cyberNewsLoading}>{cyberNewsLoading ? 'Checking…' : 'Refresh advisories'}</button>
+              </div>
+            </div>
+            <p className="cyber-advisory-note">These are published cybersecurity advisories, not a live attack detector. A report does not prove that a specific country, device, or network is currently under attack.</p>
+            {cyberNewsError && <div className="events-error" role="alert">Could not refresh CISA advisories: {cyberNewsError}{cyberNewsItems.length > 0 && ' Showing the last successful cached results.'}</div>}
+            <div className="cyber-advisory-grid">
+              {cyberNewsItems.length ? cyberNewsItems.slice(0, 8).map((item) => (
+                <article className="cyber-advisory-card" key={item.id}>
+                  {item.imageUrl ? <a className="cyber-advisory-image" href={item.url} target="_blank" rel="noreferrer" aria-label={`Open CISA advisory: ${item.title}`}><img src={item.imageUrl} alt="" loading="lazy" /></a> : <div className="cyber-advisory-image cyber-advisory-image-placeholder" aria-hidden="true"><span>CYBER<br />ADVISORY</span></div>}
+                  <div className="cyber-advisory-card-body">
+                    <small>{formatNewsTime(item.publishedAt)} UTC · CISA</small>
+                    <h3><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></h3>
+                    <p>{item.summary || 'Open the official CISA advisory for details and recommended mitigations.'}</p>
+                    <a className="cyber-advisory-open" href={item.url} target="_blank" rel="noreferrer">Read official advisory ↗</a>
+                  </div>
+                </article>
+              )) : <div className="events-empty">{cyberNewsLoading ? 'Loading official cybersecurity advisories…' : cyberNewsError ? 'CISA advisories could not be loaded. Retry to check the feed.' : 'No recent CISA advisories are available in the selected window.'}</div>}
+            </div>
+            <div className="news-source"><span>Source: <a href={cyberNewsInfo.source} target="_blank" rel="noreferrer">CISA Cybersecurity Advisories</a> · refreshed every {cyberNewsInfo.refreshMinutes} minutes</span><span>Images are shown only when the feed supplies a trusted government-hosted thumbnail.</span></div>
           </section>
 
           <section className="events-panel" aria-labelledby="events-title">
