@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import landShapes from './landShapes.js'
+import { loadCountryBoundaries, countryName, countryGeometryPolygons, countrySvgPath } from './countryBoundaries.js'
 import {
   loadCachedGeoRetrievedAt,
   loadCachedThreatFeed,
@@ -156,6 +157,8 @@ function projectLocation(location) {
 
 function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }) {
   const [expandedNewsImage, setExpandedNewsImage] = useState(false)
+  const [countryBoundaries, setCountryBoundaries] = useState([])
+  useEffect(() => { loadCountryBoundaries().then(setCountryBoundaries).catch(() => setCountryBoundaries([])) }, [])
   const visiblePoints = indicators
     .map((point) => ({ ...point, ...projectLocation(point) }))
   const visibleEvents = showEvents ? events.map((event) => ({ ...event, ...projectLocation(event) })) : []
@@ -196,7 +199,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         <path d="M250 0v500M500 0v500M750 0v500" />
         <ellipse cx="500" cy="250" rx="470" ry="210" />
       </g>
-      <g className="continents"><path d={landShapes} /></g>
+      <g className="continents"><path d={landShapes} />{landStyle === 'clean' && countryBoundaries.map((feature, index) => <path key={feature.id || countryName(feature) + index} className="country-boundary" d={countrySvgPath(feature)}><title>{countryName(feature)}</title></path>)}</g>
       <g className="map-points">
         {visiblePoints.map((point) => (
           <g
@@ -361,10 +364,12 @@ function getGlobeLandDots() {
 }
 
 function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }) {
+  const [countryBoundaries, setCountryBoundaries] = useState([])
+  useEffect(() => { loadCountryBoundaries().then(setCountryBoundaries).catch(() => setCountryBoundaries([])) }, [])
   const canvasRef = useRef(null)
   const sceneRef = useRef(null)
   const requestRedrawRef = useRef(null)
-  sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }
+  sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle, countryBoundaries }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -476,16 +481,35 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         context.stroke()
       }
 
-      for (const dot of landDots) {
-        const point = toSphere(dot.latitude, dot.longitude, centerX, centerY, radius, rotation)
-        if (point.depth <= 0) continue
-        context.globalAlpha = 0.55 + point.depth * 0.4
-        context.fillStyle = '#00f28c'
-        if (scene.landStyle === 'clean') {
-          context.beginPath()
-          context.arc(point.x, point.y, 2.35, 0, Math.PI * 2)
-          context.fill()
-        } else {
+      if (scene.landStyle === 'clean' && scene.countryBoundaries.length) {
+        context.lineWidth = 0.65
+        for (const feature of scene.countryBoundaries) {
+          for (const ring of countryGeometryPolygons(feature)) {
+            if (ring.length < 3) continue
+            context.beginPath()
+            let started = false
+            for (const [longitude, latitude] of ring) {
+              const point = toSphere(latitude, longitude, centerX, centerY, radius, rotation)
+              if (point.depth > 0) {
+                if (started) context.lineTo(point.x, point.y)
+                else { context.moveTo(point.x, point.y); started = true }
+              } else started = false
+            }
+            if (started) {
+              context.closePath()
+              context.fillStyle = 'rgba(0, 150, 88, .72)'
+              context.fill()
+              context.strokeStyle = 'rgba(0, 242, 140, .65)'
+              context.stroke()
+            }
+          }
+        }
+      } else {
+        for (const dot of landDots) {
+          const point = toSphere(dot.latitude, dot.longitude, centerX, centerY, radius, rotation)
+          if (point.depth <= 0) continue
+          context.globalAlpha = 0.55 + point.depth * 0.4
+          context.fillStyle = '#00f28c'
           context.fillRect(point.x, point.y, 1.35, 1.35)
         }
       }
@@ -632,7 +656,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
 
   useEffect(() => {
     requestRedrawRef.current?.()
-  }, [indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, landStyle])
+  }, [indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, landStyle, countryBoundaries])
 
   return <canvas ref={canvasRef} className="globe-map" role="application" tabIndex="0" aria-label="Rotating 3D globe. Drag to rotate; use arrow keys to cycle markers and Enter to select." aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter" />
 }
