@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import landShapes from './landShapes.js'
-import { loadCountryBoundaries, countryName, countryGeometryPolygons, countrySvgPath } from './countryBoundaries.js'
+import { loadCountryBoundaries, countryName, countryGeometryPolygons, countrySvgPath, countryContainsLocation } from './countryBoundaries.js'
 import {
   loadCachedGeoRetrievedAt,
   loadCachedThreatFeed,
@@ -386,6 +386,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     let isVisible = true
     let disposed = false
     let hitTargets = []
+    let hoveredCountry = null
     let keyboardIndex = 0
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const scheduleDraw = () => {
@@ -497,7 +498,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
             }
             if (started) {
               context.closePath()
-              context.fillStyle = 'rgba(0, 150, 88, .72)'
+              context.fillStyle = countryName(feature) === hoveredCountry ? 'rgba(26, 210, 125, .9)' : 'rgba(0, 150, 88, .72)'
               context.fill()
               context.strokeStyle = 'rgba(0, 242, 140, .65)'
               context.stroke()
@@ -564,6 +565,16 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
       context.fillStyle = '#75888a'
       context.font = '8px monospace'
       context.fillText('3D GLOBE · DRAG TO ROTATE', 16, 22)
+      if (scene.landStyle === 'clean' && hoveredCountry) {
+        context.font = '11px monospace'
+        const labelWidth = context.measureText(hoveredCountry).width + 16
+        context.fillStyle = 'rgba(3, 12, 9, .92)'
+        context.fillRect(width - labelWidth - 14, 12, labelWidth, 25)
+        context.strokeStyle = 'rgba(0, 242, 140, .7)'
+        context.strokeRect(width - labelWidth - 14, 12, labelWidth, 25)
+        context.fillStyle = '#d9ffeb'
+        context.fillText(hoveredCountry, width - labelWidth - 6, 28)
+      }
       if (!reducedMotion.matches && dragX === null) scheduleDraw()
     }
 
@@ -577,9 +588,29 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
       if (dragX !== null) {
         rotation += (event.clientX - dragX) / Math.max(48, Math.min(width * 0.36, height * 0.44))
         dragX = event.clientX
+      } else if (sceneRef.current.landStyle === 'clean' && sceneRef.current.countryBoundaries.length) {
+        const bounds = canvas.getBoundingClientRect()
+        const x = event.clientX - bounds.left - width / 2
+        const y = height / 2 - (event.clientY - bounds.top)
+        const radius = Math.max(48, Math.min(width * 0.36, height * 0.44))
+        const normalizedX = x / radius
+        const normalizedY = y / radius
+        const radial = normalizedX * normalizedX + normalizedY * normalizedY
+        let nextCountry = null
+        if (radial <= 1) {
+          const latitude = Math.asin(Math.max(-1, Math.min(1, normalizedY))) * 180 / Math.PI
+          const longitude = (Math.atan2(normalizedX, Math.sqrt(Math.max(0, 1 - radial))) - rotation) * 180 / Math.PI
+          for (const feature of sceneRef.current.countryBoundaries) {
+            if (countryContainsLocation(feature, longitude, latitude)) { nextCountry = countryName(feature); break }
+          }
+        }
+        if (nextCountry !== hoveredCountry) {
+          hoveredCountry = nextCountry
+          canvas.style.cursor = hoveredCountry ? 'pointer' : 'grab'
+          scheduleDraw()
+        }
       }
-    }
-    const pointerUp = () => {
+    }    const pointerUp = () => {
       dragX = null
       canvas.classList.remove('globe-dragging')
       scheduleDraw()
