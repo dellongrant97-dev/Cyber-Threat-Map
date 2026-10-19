@@ -947,6 +947,21 @@ function App() {
     return geoLocations.filter((location) => matches.has(location.ip))
   }, [filteredIndicators, geoLocations])
 
+  const selectedMapIndicator = selectedIp ? (feed?.indicators ?? []).find((indicator) => indicator.ip === selectedIp) ?? null : null
+  const selectedMapLocation = selectedIp ? geoLocations.find((location) => location.ip === selectedIp) ?? null : null
+  const selectedMapNews = selectedNewsId ? newsArticles.find((article) => article.id === selectedNewsId) ?? null : null
+  const selectedMapEvent = selectedEventId ? globalEvents.find((event) => event.id === selectedEventId) ?? null : null
+  const selectedMapCountry = selectedMapLocation?.country
+    || (selectedMapNews?.location?.precision === 'country' ? selectedMapNews.location.name : '')
+  const relatedMapNews = selectedMapCountry
+    ? newsArticles.filter((article) => article.id !== selectedNewsId
+      && article.location?.precision === 'country'
+      && article.location.name.toLowerCase() === selectedMapCountry.toLowerCase()).slice(0, 3)
+    : []
+  const relatedMapIndicators = selectedMapNews?.location?.precision === 'country'
+    ? visibleLocations.filter((location) => location.country.toLowerCase() === selectedMapNews.location.name.toLowerCase()).slice(0, 5)
+    : []
+
   const perspectiveEntries = useMemo(() => {
     const indicatorEntries = (feed?.indicators ?? []).map((indicator) => {
       const location = geoLocations.find((item) => item.ip === indicator.ip) ?? null
@@ -1341,6 +1356,72 @@ function App() {
               })() : <span className="news-strip-empty">{newsLoading ? 'Loading mapped headlines…' : 'No headlines with confidently matched locations are available.'}</span>}
             </div>
             <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? mapView === '3d' ? <GlobeMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
+            {(selectedMapIndicator || selectedMapNews || selectedMapEvent) && (
+              <section className="map-intelligence-context" aria-live="polite" aria-labelledby="map-intelligence-context-title">
+                <div className="map-intelligence-context-heading">
+                  <div>
+                    <span className="map-intelligence-eyebrow">SELECTED MAP INTELLIGENCE</span>
+                    <h3 id="map-intelligence-context-title">{selectedMapIndicator ? 'IP reputation context' : selectedMapNews ? 'News context' : 'Natural event context'}</h3>
+                  </div>
+                  <button type="button" onClick={() => { setSelectedIp(null); setSelectedNewsId(null); setSelectedEventId(null) }}>Clear selection</button>
+                </div>
+                {selectedMapIndicator && (
+                  <div className="map-intelligence-summary">
+                    <div className="map-intelligence-primary">
+                      <strong>{selectedMapIndicator.ip}</strong>
+                      <span>{selectedMapLocation ? [selectedMapLocation.city, selectedMapLocation.country].filter(Boolean).join(', ') : 'Approximate location unavailable'}</span>
+                      <small>{selectedMapIndicator.consensus}+ IPsum public source-list matches · {feed?.publishedAt ? `Publisher snapshot: ${formatDate(feed.publishedAt)}` : 'Publisher timestamp unavailable'}</small>
+                    </div>
+                    <p>A reputation listing is a signal for investigation, not proof of an active attack. GeoIP indicates an approximate hosting/network location, not the person or organization behind the activity.</p>
+                    <a href={threatFeedInfo.repository} target="_blank" rel="noreferrer">View IPsum source <Icon name="arrow" size={13} /></a>
+                  </div>
+                )}
+                {selectedMapNews && (
+                  <div className="map-intelligence-summary">
+                    <div className="map-intelligence-primary">
+                      <strong>{selectedMapNews.title}</strong>
+                      <span>{selectedMapNews.location ? `Approximate place match: ${selectedMapNews.location.name}` : 'No confident place match'}</span>
+                      <small>BBC News World · {formatNewsTime(selectedMapNews.publishedAt)} UTC</small>
+                    </div>
+                    <p>{selectedMapNews.summary || 'The publisher has not supplied a summary.'} This is a news report; its mapped place is based on text matching and is not evidence of a cyber incident.</p>
+                    <a href={selectedMapNews.url} target="_blank" rel="noreferrer">Open original BBC report <Icon name="arrow" size={13} /></a>
+                  </div>
+                )}
+                {selectedMapEvent && (
+                  <div className="map-intelligence-summary">
+                    <div className="map-intelligence-primary">
+                      <strong>{selectedMapEvent.place}</strong>
+                      <span>Magnitude {selectedMapEvent.magnitude.toFixed(1)} earthquake</span>
+                      <small>USGS · {formatEventTime(selectedMapEvent.occurredAt)} UTC</small>
+                    </div>
+                    <p>This is a natural event shown as a separate map layer. It is not a cybersecurity incident.</p>
+                    <a href={selectedMapEvent.url} target="_blank" rel="noreferrer">Open USGS event <Icon name="arrow" size={13} /></a>
+                  </div>
+                )}
+                {selectedMapIndicator && selectedMapCountry && (
+                  <div className="map-intelligence-related">
+                    <h4>Other mapped headlines in {selectedMapCountry}</h4>
+                    {relatedMapNews.length ? relatedMapNews.map((article) => (
+                      <button key={article.id} type="button" onClick={() => selectNews(article)}>
+                        <span>{article.title}</span><small>{formatNewsTime(article.publishedAt)} UTC · BBC News</small>
+                      </button>
+                    )) : <p>No other country-level BBC headlines currently match this location. This does not mean the region has no cyber activity.</p>}
+                  </div>
+                )}
+                {selectedMapNews?.location?.precision === 'country' && (
+                  <div className="map-intelligence-related">
+                    <h4>IP reputation indicators in {selectedMapNews.location.name}</h4>
+                    {relatedMapIndicators.length ? relatedMapIndicators.map((location) => {
+                      const indicator = (feed?.indicators ?? []).find((item) => item.ip === location.ip)
+                      return <button key={location.ip} type="button" onClick={() => selectIndicator(location.ip)}>
+                        <span>{location.ip}</span><small>{location.city ? `${location.city}, ` : ''}{location.country} · {indicator ? `${indicator.consensus}+ source lists` : 'IPsum match'}</small>
+                      </button>
+                    }) : <p>No currently displayed IP reputation indicators have a matching country-level GeoIP location. This is not proof that the region is safe.</p>}
+                  </div>
+                )}
+                <p className="map-intelligence-disclaimer">Correlation here means a shared approximate country label only. It does not establish that a headline was caused by an IP indicator or that the indicator is connected to the reported event.</p>
+              </section>
+            )}
             <div className="map-footer"><div className="legend"><span className="legend-title">MAP KEY</span><span><i className="confidence-dot high" /> 6+ source lists</span><span><i className="confidence-dot medium" /> 3-5 source lists</span><span><i className="event-legend-dot" /> USGS earthquake</span><span><i className="news-legend-dot" /> BBC news area</span></div><span className="map-disclaimer">News areas are approximate headline place matches.</span></div>
           </section>
 
