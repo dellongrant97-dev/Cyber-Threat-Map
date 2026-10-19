@@ -886,3 +886,58 @@ h1 > span { color: var(--green); }
   outline: 2px solid #00f28c;
   outline-offset: 2px;
 }
+
+
+/* Intelligence Perspective: additive styles; existing dashboard styles remain unchanged. */
+.intelligence-perspective-panel { scroll-margin-top: 16px; }
+.perspective-eyebrow { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: var(--green); font: 9px var(--mono); letter-spacing: 1.1px; }
+.perspective-eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px #a8ff7480; }
+.perspective-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 17px 0 12px; }
+.perspective-controls label { display: flex; flex-direction: column; gap: 7px; color: #82918f; font: 9px var(--mono); letter-spacing: .3px; }
+.perspective-controls select { width: 100%; min-width: 0; height: 34px; padding: 0 9px; border: 1px solid #283537; border-radius: 5px; background: #101719; color: #dce5e0; font: 10px 'DM Sans', sans-serif; }
+.perspective-controls select:disabled { opacity: .5; cursor: not-allowed; }
+.perspective-stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.perspective-stat-row > div { display: flex; min-width: 0; flex-direction: column; gap: 5px; padding: 11px 12px; border: 1px solid #202b2d; border-radius: 5px; background: #0c1214; }
+.perspective-stat-row span { color: #7d8c8b; font: 8px var(--mono); letter-spacing: .6px; }
+.perspective-stat-row strong { color: #e7f0e9; font: 600 20px var(--display); }
+.perspective-stat-row small { color: #70807e; font-size: 9px; }
+.perspective-content-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(210px, .8fr); gap: 12px; align-items: start; }
+.perspective-results, .perspective-detail { min-width: 0; border: 1px solid #222d2f; border-radius: 6px; background: #0b1113; }
+.perspective-results-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border-bottom: 1px solid #202a2c; }
+.perspective-results-heading strong { color: #dce6df; font-size: 11px; }
+.perspective-results-heading span { color: #6f7e7e; font-size: 9px; text-align: right; }
+.perspective-entry-list { display: grid; }
+.perspective-entry { display: flex; align-items: flex-start; width: 100%; min-width: 0; padding: 12px; gap: 10px; border: 0; border-bottom: 1px solid #1b2527; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.perspective-entry:last-child { border-bottom: 0; }
+.perspective-entry:hover, .perspective-entry-selected { background: #121b19; }
+.perspective-entry-selected { box-shadow: inset 2px 0 var(--green); }
+.perspective-type-dot { width: 7px; height: 7px; flex: none; margin-top: 5px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px #a8ff7430; }
+.perspective-type-news { background: #cf9bff; box-shadow: 0 0 8px #cf9bff40; }
+.perspective-type-event { background: var(--cyan); box-shadow: 0 0 8px #60d8d040; }
+.perspective-entry-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
+.perspective-entry-meta { color: #82918c; font: 8px var(--mono); letter-spacing: .45px; overflow-wrap: anywhere; }
+.perspective-entry-copy strong { color: #e3ece6; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.perspective-entry-copy > span:not(.perspective-entry-meta) { color: #95a29d; font-size: 10px; line-height: 1.55; }
+.perspective-entry-copy small { color: #6f7d7c; font-size: 9px; line-height: 1.5; }
+.perspective-entry > svg { flex: none; margin-top: 10px; color: #6c7b79; }
+.perspective-detail { position: sticky; top: 14px; padding: 14px; }
+.perspective-detail-label { display: block; margin-bottom: 13px; color: #7c8b88; font: 8px var(--mono); letter-spacing: .8px; }
+.perspective-detail-kind { display: inline-block; margin-bottom: 9px; color: var(--green); font: 8px var(--mono); letter-spacing: .5px; }
+.perspective-detail-kind.perspective-type-news { color: #cf9bff; }
+.perspective-detail-kind.perspective-type-event { color: var(--cyan); }
+.perspective-detail h3 { margin: 0 0 6px; color: #eaf1ec; font: 600 17px var(--display); line-height: 1.35; overflow-wrap: anywhere; }
+.perspective-detail p { color: #9aa7a1; font-size: 10px; line-height: 1.7; overflow-wrap: anywhere; }
+.perspective-detail .perspective-detail-location { margin: 0 0 10px; color: #c1d2c8; font-size: 10px; }
+.perspective-detail dl { display: grid; gap: 0; margin: 14px 0; border-top: 1px solid #202a2b; }
+.perspective-detail dl > div { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #202a2b; }
+.perspective-detail dt { color: #74827f; font-size: 9px; }
+.perspective-detail dd { max-width: 62%; margin: 0; color: #c9d6cf; font-size: 9px; text-align: right; overflow-wrap: anywhere; }
+.perspective-source-link { display: inline-flex; align-items: center; gap: 7px; padding: 8px 9px; border: 1px solid #334638; border-radius: 4px; background: #141d17; color: #c8f3b4; font-size: 9px; text-decoration: none; }
+.perspective-source-link:hover { border-color: var(--green); }
+.perspective-detail-empty { display: flex; min-height: 170px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px; }
+.perspective-detail-empty > span { color: var(--green); font-size: 22px; }
+.perspective-detail-empty strong { color: #dce7df; font-size: 11px; }
+.perspective-detail-empty p { margin: 0; }
+.perspective-disclaimer { margin: 13px 0 0; padding: 10px 11px; border-left: 2px solid #6b794b; background: #101612; color: #9ca79c; font-size: 9px; line-height: 1.7; }
+@media (max-width: 1100px) { .perspective-content-grid { grid-template-columns: minmax(0, 1fr); } .perspective-detail { position: static; } }
+@media (max-width: 700px) { .perspective-controls { grid-template-columns: minmax(0, 1fr); } .perspective-stat-row { gap: 6px; } .perspective-stat-row > div { padding: 9px 8px; } .perspective-stat-row strong { font-size: 17px; } .perspective-stat-row span { font-size: 7px; } .perspective-results-heading { align-items: flex-start; flex-direction: column; } .perspective-results-heading span { text-align: left; } }
