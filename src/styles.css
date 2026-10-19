@@ -992,3 +992,81 @@ h1 > span { color: var(--green); }
 .cyber-advisory-card-body p { display: -webkit-box; overflow: hidden; margin: 0 0 12px; color: var(--muted, #9ca3af); font-size: 0.82rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 .cyber-advisory-open { color: var(--accent, #a5b4fc); font-size: 0.8rem; font-weight: 600; text-decoration: none; }
 @media (max-width: 680px) { .cyber-advisory-grid { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* Phase 3: selected map item context and cautious regional correlation */
+.map-intelligence-context {
+  margin: 14px 0 18px;
+  padding: 16px;
+  border: 1px solid #254b38;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(13, 28, 20, .96), rgba(13, 20, 17, .96));
+  color: #dce8df;
+}
+.map-intelligence-context-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.map-intelligence-eyebrow {
+  color: var(--green, #00f28c);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .15em;
+}
+.map-intelligence-context-heading h3 {
+  margin: 5px 0 0;
+  font-size: 15px;
+}
+.map-intelligence-context-heading > button {
+  border: 1px solid #355442;
+  border-radius: 5px;
+  padding: 7px 10px;
+  background: #111b15;
+  color: #c4d4c9;
+  font-size: 10px;
+  cursor: pointer;
+}
+.map-intelligence-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr);
+  gap: 8px 18px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(113, 151, 127, .18);
+}
+.map-intelligence-primary { display: grid; gap: 5px; min-width: 0; }
+.map-intelligence-primary strong { overflow-wrap: anywhere; color: #f1f8f3; font-size: 12px; line-height: 1.5; }
+.map-intelligence-primary span { color: #b3c6b8; font-size: 10px; line-height: 1.5; }
+.map-intelligence-primary small { color: #82968a; font-size: 9px; line-height: 1.5; }
+.map-intelligence-summary p { margin: 0; color: #aebdb2; font-size: 10px; line-height: 1.7; }
+.map-intelligence-summary > a { grid-column: 1 / -1; width: fit-content; color: #91ffc2; font-size: 10px; text-decoration: none; }
+.map-intelligence-summary > a:hover { text-decoration: underline; }
+.map-intelligence-related { padding-top: 12px; border-top: 1px solid rgba(113, 151, 127, .18); }
+.map-intelligence-related h4 { margin: 0 0 8px; color: #bce9cc; font-size: 10px; }
+.map-intelligence-related > button {
+  display: grid;
+  width: 100%;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 10px 11px;
+  border: 1px solid rgba(91, 129, 104, .28);
+  border-radius: 6px;
+  background: rgba(6, 16, 10, .62);
+  color: #d9e7dd;
+  text-align: left;
+  cursor: pointer;
+}
+.map-intelligence-related > button:hover,
+.map-intelligence-related > button:focus-visible { border-color: var(--green, #00f28c); outline: 1px solid var(--green, #00f28c); }
+.map-intelligence-related > button span { font-size: 10px; line-height: 1.5; }
+.map-intelligence-related > button small { color: #8fa296; font-size: 9px; }
+.map-intelligence-related > p { margin: 0; color: #9eafa3; font-size: 10px; line-height: 1.65; }
+.map-intelligence-disclaimer { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid rgba(113, 151, 127, .18); color: #82968a; font-size: 9px; line-height: 1.65; }
+@media (max-width: 650px) {
+  .map-intelligence-context { padding: 12px; }
+  .map-intelligence-context-heading { align-items: flex-start; }
+  .map-intelligence-summary { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .map-intelligence-summary > a { grid-column: 1; }
+}
