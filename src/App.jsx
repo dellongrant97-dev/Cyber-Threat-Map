@@ -288,8 +288,8 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
               role="button"
               tabIndex={0}
               aria-label="Expand news thumbnail"
-              onClick={() => setExpandedNewsImage(true)}
-              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpandedNewsImage(true) } }}
+              onClick={(event) => { event.stopPropagation(); setExpandedNewsImage(true) }}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setExpandedNewsImage(true) } }}
               onError={(event) => {
                 const image = event.currentTarget
                 if (image.dataset.imageFallback === 'true') return
@@ -309,7 +309,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
                 image.insertAdjacentElement('afterend', placeholder)
               }}
             />
-            <button className="news-zoom-expand-button" type="button" aria-label="Expand thumbnail to full size" title="View full image" onClick={() => setExpandedNewsImage(true)}>
+            <button className="news-zoom-expand-button" type="button" aria-label="Expand thumbnail to full size" title="View full image" onClick={(event) => { event.stopPropagation(); setExpandedNewsImage(true) }}>
               <Icon name="arrow" size={16} />
             </button>
             </div>
@@ -1189,7 +1189,7 @@ function App() {
         <div className="nav-label">MONITOR</div>
         <nav className="primary-nav" aria-label="Dashboard sections">
           {tabs.map((tab) => (
-            <button className={`nav-item ${activeTab === tab.label ? 'active' : ''}`} key={tab.label} onClick={() => navigateTo(tab)} aria-current={activeTab === tab.label ? 'location' : undefined}>
+            <button className={`nav-item ${activeTab === tab.label ? 'active' : ''}`} key={tab.label} title={tab.label} aria-label={tab.label} onClick={() => navigateTo(tab)} aria-current={activeTab === tab.label ? 'location' : undefined}>
               <Icon name={tab.icon} /><span>{tab.label}</span>
             </button>
           ))}
@@ -1237,6 +1237,12 @@ function App() {
             </div>
             <button className="range-button refresh-button" onClick={refreshFeed} disabled={feedLoading}><Icon name="clock" size={15} />{feedLoading ? 'Checking feed…' : 'Refresh intelligence'}</button>
           </div>
+
+          <button className="perspective-quick-link" type="button" onClick={() => navigateTo(tabs.find((tab) => tab.target === 'intelligence-perspective'))}>
+            <Icon name="pulse" size={15} />
+            <span>Open Intelligence Perspective</span>
+            <Icon name="arrow" size={13} />
+          </button>
 
           <div className="reality-banner"><span className="info-mark">i</span><span><strong>This is threat intelligence, not real-time incident telemetry.</strong> IPsum aggregates 30+ public blocklists and updates daily. A listed IP is not proof of an active attack on your network.</span></div>
           {feedError && <div className="feed-error" role="alert"><strong>Feed refresh failed.</strong> {feedError} {feed && 'Showing the last successful cached snapshot.'}<button onClick={refreshFeed} disabled={feedLoading}>Retry</button></div>}
