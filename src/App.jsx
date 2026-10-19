@@ -287,7 +287,11 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
                 }
                 image.dataset.imageFallback = 'true'
                 image.alt = 'BBC thumbnail unavailable'
-                image.src = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240"><rect width="640" height="240" fill="#071b13"/><text x="320" y="120" fill="#a8f5c0" font-family="Arial,sans-serif" font-size="18" text-anchor="middle">BBC THUMBNAIL UNAVAILABLE</text></svg>')
+                image.style.display = 'none'
+                const placeholder = document.createElement('div')
+                placeholder.className = 'news-zoom-placeholder'
+                placeholder.textContent = 'BBC THUMBNAIL UNAVAILABLE'
+                image.insertAdjacentElement('afterend', placeholder)
               }}
             />
           ) : (
