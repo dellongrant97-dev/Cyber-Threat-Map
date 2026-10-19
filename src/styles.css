@@ -1100,3 +1100,9 @@ h1 > span { color: var(--green); }
 .world-map.land-style-clean .continents path { fill: #0e3527; stroke: #00b96b; stroke-width: 1.15; stroke-linejoin: round; opacity: .94; filter: none; }
 @media (max-width: 900px) { .map-style-toggle > span { display: none; } }
 @media (max-width: 650px) { .map-style-toggle button { padding-inline: 5px; font-size: 7px; } }
+
+
+/* Country-level borders for clean land style. */
+.world-map.land-style-clean .continents > path:first-child { fill: #0e3527; stroke: #00b96b; stroke-width: 1.15; stroke-linejoin: round; opacity: .94; }
+.world-map.land-style-clean .continents .country-boundary { fill: none; stroke: rgba(0, 242, 140, .55); stroke-width: .55; vector-effect: non-scaling-stroke; pointer-events: all; cursor: crosshair; }
+.world-map.land-style-clean .continents .country-boundary:hover { stroke: #e2ffef; stroke-width: 1.25; }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import landShapes from './landShapes.js'
+import { loadCountryBoundaries, countryName, countryGeometryPolygons, countrySvgPath, countryContainsLocation } from './countryBoundaries.js'
 import {
   loadCachedGeoRetrievedAt,
   loadCachedThreatFeed,
@@ -156,6 +157,8 @@ function projectLocation(location) {
 
 function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }) {
   const [expandedNewsImage, setExpandedNewsImage] = useState(false)
+  const [countryBoundaries, setCountryBoundaries] = useState([])
+  useEffect(() => { loadCountryBoundaries().then(setCountryBoundaries).catch(() => setCountryBoundaries([])) }, [])
   const visiblePoints = indicators
     .map((point) => ({ ...point, ...projectLocation(point) }))
   const visibleEvents = showEvents ? events.map((event) => ({ ...event, ...projectLocation(event) })) : []
@@ -196,7 +199,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         <path d="M250 0v500M500 0v500M750 0v500" />
         <ellipse cx="500" cy="250" rx="470" ry="210" />
       </g>
-      <g className="continents"><path d={landShapes} /></g>
+      <g className="continents"><path d={landShapes} />{landStyle === 'clean' && countryBoundaries.map((feature, index) => <path key={feature.id || countryName(feature) + index} className="country-boundary" d={countrySvgPath(feature)}><title>{countryName(feature)}</title></path>)}</g>
       <g className="map-points">
         {visiblePoints.map((point) => (
           <g
@@ -361,10 +364,12 @@ function getGlobeLandDots() {
 }
 
 function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }) {
+  const [countryBoundaries, setCountryBoundaries] = useState([])
+  useEffect(() => { loadCountryBoundaries().then(setCountryBoundaries).catch(() => setCountryBoundaries([])) }, [])
   const canvasRef = useRef(null)
   const sceneRef = useRef(null)
   const requestRedrawRef = useRef(null)
-  sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }
+  sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle, countryBoundaries }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -381,6 +386,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
     let isVisible = true
     let disposed = false
     let hitTargets = []
+    let hoveredCountry = null
     let keyboardIndex = 0
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const scheduleDraw = () => {
@@ -476,16 +482,35 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         context.stroke()
       }
 
-      for (const dot of landDots) {
-        const point = toSphere(dot.latitude, dot.longitude, centerX, centerY, radius, rotation)
-        if (point.depth <= 0) continue
-        context.globalAlpha = 0.55 + point.depth * 0.4
-        context.fillStyle = '#00f28c'
-        if (scene.landStyle === 'clean') {
-          context.beginPath()
-          context.arc(point.x, point.y, 2.35, 0, Math.PI * 2)
-          context.fill()
-        } else {
+      if (scene.landStyle === 'clean' && scene.countryBoundaries.length) {
+        context.lineWidth = 0.65
+        for (const feature of scene.countryBoundaries) {
+          for (const ring of countryGeometryPolygons(feature)) {
+            if (ring.length < 3) continue
+            context.beginPath()
+            let started = false
+            for (const [longitude, latitude] of ring) {
+              const point = toSphere(latitude, longitude, centerX, centerY, radius, rotation)
+              if (point.depth > 0) {
+                if (started) context.lineTo(point.x, point.y)
+                else { context.moveTo(point.x, point.y); started = true }
+              } else started = false
+            }
+            if (started) {
+              context.closePath()
+              context.fillStyle = countryName(feature) === hoveredCountry ? 'rgba(26, 210, 125, .9)' : 'rgba(0, 150, 88, .72)'
+              context.fill()
+              context.strokeStyle = 'rgba(0, 242, 140, .65)'
+              context.stroke()
+            }
+          }
+        }
+      } else {
+        for (const dot of landDots) {
+          const point = toSphere(dot.latitude, dot.longitude, centerX, centerY, radius, rotation)
+          if (point.depth <= 0) continue
+          context.globalAlpha = 0.55 + point.depth * 0.4
+          context.fillStyle = '#00f28c'
           context.fillRect(point.x, point.y, 1.35, 1.35)
         }
       }
@@ -540,6 +565,16 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
       context.fillStyle = '#75888a'
       context.font = '8px monospace'
       context.fillText('3D GLOBE · DRAG TO ROTATE', 16, 22)
+      if (scene.landStyle === 'clean' && hoveredCountry) {
+        context.font = '11px monospace'
+        const labelWidth = context.measureText(hoveredCountry).width + 16
+        context.fillStyle = 'rgba(3, 12, 9, .92)'
+        context.fillRect(width - labelWidth - 14, 12, labelWidth, 25)
+        context.strokeStyle = 'rgba(0, 242, 140, .7)'
+        context.strokeRect(width - labelWidth - 14, 12, labelWidth, 25)
+        context.fillStyle = '#d9ffeb'
+        context.fillText(hoveredCountry, width - labelWidth - 6, 28)
+      }
       if (!reducedMotion.matches && dragX === null) scheduleDraw()
     }
 
@@ -553,6 +588,27 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
       if (dragX !== null) {
         rotation += (event.clientX - dragX) / Math.max(48, Math.min(width * 0.36, height * 0.44))
         dragX = event.clientX
+      } else if (sceneRef.current.landStyle === 'clean' && sceneRef.current.countryBoundaries.length) {
+        const bounds = canvas.getBoundingClientRect()
+        const x = event.clientX - bounds.left - width / 2
+        const y = height / 2 - (event.clientY - bounds.top)
+        const radius = Math.max(48, Math.min(width * 0.36, height * 0.44))
+        const normalizedX = x / radius
+        const normalizedY = y / radius
+        const radial = normalizedX * normalizedX + normalizedY * normalizedY
+        let nextCountry = null
+        if (radial <= 1) {
+          const latitude = Math.asin(Math.max(-1, Math.min(1, normalizedY))) * 180 / Math.PI
+          const longitude = (Math.atan2(normalizedX, Math.sqrt(Math.max(0, 1 - radial))) - rotation) * 180 / Math.PI
+          for (const feature of sceneRef.current.countryBoundaries) {
+            if (countryContainsLocation(feature, longitude, latitude)) { nextCountry = countryName(feature); break }
+          }
+        }
+        if (nextCountry !== hoveredCountry) {
+          hoveredCountry = nextCountry
+          canvas.style.cursor = hoveredCountry ? 'pointer' : 'grab'
+          scheduleDraw()
+        }
       }
     }
     const pointerUp = () => {
@@ -632,7 +688,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
 
   useEffect(() => {
     requestRedrawRef.current?.()
-  }, [indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, landStyle])
+  }, [indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, landStyle, countryBoundaries])
 
   return <canvas ref={canvasRef} className="globe-map" role="application" tabIndex="0" aria-label="Rotating 3D globe. Drag to rotate; use arrow keys to cycle markers and Enter to select." aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter" />
 }
