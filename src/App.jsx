@@ -1725,6 +1725,7 @@ function App() {
                   empty: 'Retrieved · no records',
                   idle: 'Not checked',
                   stale: 'Cached · may be stale',
+                  delayed: 'Update overdue',
                   error: 'Retrieval failed',
                   offline: 'Browser offline',
                 }[source.status]
@@ -1749,6 +1750,7 @@ function App() {
                       <div><span>DISPLAYED RECORDS</span><strong>{source.hasData ? `${formatNumber(currentRows ?? source.count)}${source.stale ? ' · cached' : ''}` : source.loading ? 'Waiting for response' : source.status === 'empty' ? '0 · successful empty response' : source.status === 'stale' ? 'No records in last successful snapshot · may be stale' : 'No records available'}</strong></div>
                     </div>
                     {source.error && <p className={`source-health-error ${source.status === 'offline' ? 'is-offline' : ''}`} role="status">{source.error}</p>}
+                    {source.recoveryHint && <p className="source-health-recovery">{source.recoveryHint}</p>}
                     <div className="source-health-footer">
                       <a href={source.sourceUrl} target="_blank" rel="noreferrer">{source.id === 'openphish' ? 'Provider information' : 'Source details'} ↗</a>
                       <button onClick={() => refreshSource(source.refresh)} disabled={!online || source.loading || (source.id === 'geoip' && !feed) || (source.id === 'nvd' && vulnerabilityRetrySeconds > 0)}>{source.loading ? 'Checking…' : source.id === 'nvd' && vulnerabilityRetrySeconds > 0 ? `Retry in ${vulnerabilityRetrySeconds}s` : source.id === 'openphish' ? 'Refresh feed' : source.id === 'geoip' ? 'Resolve sample' : 'Check now'}</button>
