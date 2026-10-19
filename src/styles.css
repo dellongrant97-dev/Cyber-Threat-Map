@@ -975,3 +975,20 @@ h1 > span { color: var(--green); }
 .news-zoom-image-wrap,
 .news-zoom-expand-button { pointer-events: auto; }
 .news-image-lightbox { z-index: 99999; }
+
+
+/* Official CISA advisory feed */
+.cyber-advisory-note { margin: 0 0 16px; color: var(--muted, #9ca3af); font-size: 0.82rem; line-height: 1.55; }
+.cyber-advisory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.cyber-advisory-card { min-width: 0; overflow: hidden; border: 1px solid var(--border, rgba(148, 163, 184, 0.2)); border-radius: 12px; background: var(--panel, rgba(15, 23, 42, 0.45)); }
+.cyber-advisory-image { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 16 / 7; overflow: hidden; background: rgba(100, 116, 139, 0.12); }
+.cyber-advisory-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cyber-advisory-image-placeholder { color: var(--muted, #9ca3af); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.16em; line-height: 1.6; text-align: center; }
+.cyber-advisory-card-body { padding: 14px; }
+.cyber-advisory-card-body > small { color: var(--muted, #9ca3af); font-size: 0.72rem; }
+.cyber-advisory-card-body h3 { margin: 8px 0; font-size: 0.96rem; line-height: 1.45; }
+.cyber-advisory-card-body h3 a { color: inherit; text-decoration: none; }
+.cyber-advisory-card-body h3 a:hover, .cyber-advisory-open:hover { text-decoration: underline; }
+.cyber-advisory-card-body p { display: -webkit-box; overflow: hidden; margin: 0 0 12px; color: var(--muted, #9ca3af); font-size: 0.82rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.cyber-advisory-open { color: var(--accent, #a5b4fc); font-size: 0.8rem; font-weight: 600; text-decoration: none; }
+@media (max-width: 680px) { .cyber-advisory-grid { grid-template-columns: minmax(0, 1fr); } }
