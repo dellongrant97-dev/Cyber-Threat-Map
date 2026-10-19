@@ -610,7 +610,8 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
           scheduleDraw()
         }
       }
-    }    const pointerUp = () => {
+    }
+    const pointerUp = () => {
       dragX = null
       canvas.classList.remove('globe-dragging')
       scheduleDraw()
