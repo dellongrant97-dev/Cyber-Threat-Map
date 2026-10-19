@@ -995,6 +995,23 @@ h1 > span { color: var(--green); }
 
 
 /* Phase 3: selected map item context and cautious regional correlation */
+
+.evidence-age {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  margin-top: 2px;
+  padding: 4px 7px;
+  border: 1px solid #34443a;
+  border-radius: 4px;
+  background: #111a14;
+  color: #b9d5c1;
+  font: 9px var(--mono, monospace);
+}
+.evidence-age-fresh { border-color: #31583b; color: #baf5a1; background: #112017; }
+.evidence-age-recent { border-color: #66532d; color: #f0d18d; background: #211b10; }
+.evidence-age-older, .evidence-age-unknown { border-color: #584047; color: #e3b0b8; background: #211418; }
+
 .map-intelligence-context {
   margin: 14px 0 18px;
   padding: 16px;
