@@ -29,3 +29,17 @@ export function countrySvgPath(feature) {
     return (index ? 'L' : 'M') + x.toFixed(2) + ',' + y.toFixed(2)
   }).join(' ') + 'Z').join(' ')
 }
+export function countryContainsLocation(feature, longitude, latitude) {
+  const inRing = (ring) => {
+    let inside = false
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i]
+      const [xj, yj] = ring[j]
+      const crosses = ((yi > latitude) !== (yj > latitude)) && (longitude < ((xj - xi) * (latitude - yi)) / ((yj - yi) || Number.EPSILON) + xi)
+      if (crosses) inside = !inside
+    }
+    return inside
+  }
+  const polygons = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.type === 'MultiPolygon' ? feature.geometry.coordinates : []
+  return polygons.some((rings) => rings.length > 0 && inRing(rings[0]) && !rings.slice(1).some((hole) => inRing(hole)))
+}
