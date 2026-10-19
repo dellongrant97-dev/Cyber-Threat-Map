@@ -154,7 +154,7 @@ function projectLocation(location) {
   }
 }
 
-function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }) {
+function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }) {
   const [expandedNewsImage, setExpandedNewsImage] = useState(false)
   const visiblePoints = indicators
     .map((point) => ({ ...point, ...projectLocation(point) }))
@@ -178,7 +178,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
 
   return (
     <>
-      <svg className="world-map" viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
+      <svg className={`world-map land-style-${landStyle}`} viewBox="0 0 1000 500" role="img" aria-labelledby="map-title map-desc" preserveAspectRatio="xMidYMid meet">
       <title id="map-title">Public threat intelligence and global events</title>
       <desc id="map-desc">A dotted 2D world map with approximate hosting locations for suspicious IP indicators and, when enabled, independently sourced USGS earthquake events of magnitude 4.5 or greater.</desc>
       <defs>
@@ -360,11 +360,11 @@ function getGlobeLandDots() {
   return cachedGlobeLandDots
 }
 
-function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }) {
+function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }) {
   const canvasRef = useRef(null)
   const sceneRef = useRef(null)
   const requestRedrawRef = useRef(null)
-  sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews }
+  sceneRef.current = { indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, onSelect, onSelectEvent, onSelectNews, landStyle }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -481,7 +481,13 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
         if (point.depth <= 0) continue
         context.globalAlpha = 0.55 + point.depth * 0.4
         context.fillStyle = '#00f28c'
-        context.fillRect(point.x, point.y, 1.35, 1.35)
+        if (scene.landStyle === 'clean') {
+          context.beginPath()
+          context.arc(point.x, point.y, 2.35, 0, Math.PI * 2)
+          context.fill()
+        } else {
+          context.fillRect(point.x, point.y, 1.35, 1.35)
+        }
       }
       context.globalAlpha = 1
 
@@ -626,7 +632,7 @@ function GlobeMap({ indicators, events, showEvents, news, showNews, selectedIp, 
 
   useEffect(() => {
     requestRedrawRef.current?.()
-  }, [indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId])
+  }, [indicators, events, showEvents, news, showNews, selectedIp, selectedEventId, selectedNewsId, landStyle])
 
   return <canvas ref={canvasRef} className="globe-map" role="application" tabIndex="0" aria-label="Rotating 3D globe. Drag to rotate; use arrow keys to cycle markers and Enter to select." aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter" />
 }
@@ -692,6 +698,13 @@ function App() {
   const [showNews, setShowNews] = useState(true)
   const [selectedNewsId, setSelectedNewsId] = useState(null)
   const [mapView, setMapView] = useState('2d')
+  const [landStyle, setLandStyle] = useState(() => {
+    try { return window.localStorage.getItem('cyber-threat-map-land-style') === 'clean' ? 'clean' : 'dotted' } catch { return 'dotted' }
+  })
+  const updateLandStyle = (style) => {
+    setLandStyle(style)
+    try { window.localStorage.setItem('cyber-threat-map-land-style', style) } catch { /* preference storage is optional */ }
+  }
   const [perspectiveRegion, setPerspectiveRegion] = useState('all')
   const [perspectiveLayer, setPerspectiveLayer] = useState('all')
   const [perspectiveConfidence, setPerspectiveConfidence] = useState('all')
@@ -1313,6 +1326,11 @@ function App() {
                   <button className={mapView === '2d' ? 'selected' : ''} aria-pressed={mapView === '2d'} onClick={() => setMapView('2d')}>2D Map</button>
                   <button className={mapView === '3d' ? 'selected' : ''} aria-pressed={mapView === '3d'} onClick={() => setMapView('3d')}>3D Globe</button>
                 </div>
+                <div className="map-style-toggle" role="group" aria-label="Continent appearance">
+                  <span>LAND</span>
+                  <button className={landStyle === 'dotted' ? 'selected' : ''} aria-pressed={landStyle === 'dotted'} onClick={() => updateLandStyle('dotted')}>Dotted</button>
+                  <button className={landStyle === 'clean' ? 'selected' : ''} aria-pressed={landStyle === 'clean'} onClick={() => updateLandStyle('clean')}>Clean</button>
+                </div>
                 <button className="map-menu" aria-label="Threat intelligence source options" aria-expanded={sourceOpen} onClick={() => setSourceOpen(!sourceOpen)}>···</button>
                 {sourceOpen && <div className="map-options"><strong>Intelligence sources</strong><a href={threatFeedInfo.repository} target="_blank" rel="noreferrer">IPsum · public blocklists <Icon name="arrow" size={12} /></a><a href={threatFeedInfo.geolocationProvider} target="_blank" rel="noreferrer">ipapi.co · IP GeoIP <Icon name="arrow" size={12} /></a><button onClick={exportIndicators}>Export filtered indicators (.csv)</button><span>Public indicator data can be stale and may contain false positives.</span></div>}
               </div>
@@ -1356,7 +1374,7 @@ function App() {
                 );
               })() : <span className="news-strip-empty">{newsLoading ? 'Loading mapped headlines…' : 'No headlines with confidently matched locations are available.'}</span>}
             </div>
-            <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? mapView === '3d' ? <GlobeMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
+            <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? mapView === '3d' ? <GlobeMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} landStyle={landStyle} /> : <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} landStyle={landStyle} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
             {(selectedMapIndicator || selectedMapNews || selectedMapEvent) && (
               <section className="map-intelligence-context" aria-live="polite" aria-labelledby="map-intelligence-context-title">
                 <div className="map-intelligence-context-heading">
