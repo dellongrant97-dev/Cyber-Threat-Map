@@ -28,6 +28,7 @@ import { logClientError } from './clientLog.js'
 const tabs = [
   { label: 'Overview', icon: 'grid', target: 'overview' },
   { label: 'Threat map', icon: 'radar', target: 'threat-map' },
+  { label: 'Intelligence Perspective', icon: 'pulse', target: 'intelligence-perspective' },
   { label: 'Indicators', icon: 'alert', target: 'indicator-panel' },
   { label: 'Activity', icon: 'clock', target: 'activity-timeline' },
   { label: 'Trends', icon: 'pulse', target: 'trend-analytics' },
@@ -689,6 +690,10 @@ function App() {
   const [showNews, setShowNews] = useState(true)
   const [selectedNewsId, setSelectedNewsId] = useState(null)
   const [mapView, setMapView] = useState('2d')
+  const [perspectiveRegion, setPerspectiveRegion] = useState('all')
+  const [perspectiveLayer, setPerspectiveLayer] = useState('all')
+  const [perspectiveConfidence, setPerspectiveConfidence] = useState('all')
+  const [perspectiveSelection, setPerspectiveSelection] = useState(null)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [openPhishLoading, setOpenPhishLoading] = useState(false)
   const [openPhishError, setOpenPhishError] = useState('')
@@ -907,6 +912,63 @@ function App() {
     const matches = new Set(filteredIndicators.map((indicator) => indicator.ip))
     return geoLocations.filter((location) => matches.has(location.ip))
   }, [filteredIndicators, geoLocations])
+
+  const perspectiveEntries = useMemo(() => {
+    const indicatorEntries = (feed?.indicators ?? []).map((indicator) => {
+      const location = geoLocations.find((item) => item.ip === indicator.ip) ?? null
+      return {
+        id: `ip:${indicator.ip}`,
+        type: 'indicator',
+        title: indicator.ip,
+        location: location ? `${location.city ? `${location.city}, ` : ''}${location.country}` : 'Approximate location unavailable',
+        country: location?.country ?? '',
+        summary: `${indicator.consensus}+ public source-list matches. This is reputation intelligence, not proof of an active attack.`,
+        source: 'IPsum public blocklists',
+        timestamp: feed?.publishedAt ?? null,
+        timeLabel: feed?.publishedAt ? formatDate(feed.publishedAt) : 'Publisher date unavailable',
+        url: threatFeedInfo.repository,
+        consensus: indicator.consensus,
+        ip: indicator.ip,
+      }
+    }).filter((entry) => {
+      if (perspectiveRegion !== 'all' && entry.country !== perspectiveRegion) return false
+      if (perspectiveConfidence === 'high' && entry.consensus < 6) return false
+      if (perspectiveConfidence === 'medium' && (entry.consensus < 3 || entry.consensus >= 6)) return false
+      return true
+    })
+    const newsEntries = newsArticles.map((article) => ({
+      id: `news:${article.id}`,
+      type: 'news',
+      title: article.title,
+      location: article.location?.name ?? 'No confident location match',
+      country: article.location?.name ?? '',
+      summary: article.summary || 'Open the publisher article for more details.',
+      source: 'BBC News World',
+      timestamp: article.publishedAt ?? null,
+      timeLabel: article.publishedAt ? `${formatNewsTime(article.publishedAt)} UTC` : 'Publication time unavailable',
+      url: article.url,
+      articleId: article.id,
+    })).filter((entry) => perspectiveRegion === 'all' || entry.location.toLowerCase().includes(perspectiveRegion.toLowerCase()))
+    const eventEntries = globalEvents.map((event) => ({
+      id: `event:${event.id}`,
+      type: 'event',
+      title: event.place,
+      location: event.place,
+      country: event.place,
+      summary: `USGS reports a magnitude ${event.magnitude.toFixed(1)} earthquake. Natural events are displayed separately and are not cyber incidents.`,
+      source: 'USGS earthquake feed',
+      timestamp: event.occurredAt ?? null,
+      timeLabel: event.occurredAt ? `${formatEventTime(event.occurredAt)} UTC` : 'Event time unavailable',
+      url: event.url,
+      eventId: event.id,
+      magnitude: event.magnitude,
+    })).filter((entry) => perspectiveRegion === 'all' || entry.location.toLowerCase().includes(perspectiveRegion.toLowerCase()))
+    return [
+      ...(perspectiveLayer === 'all' || perspectiveLayer === 'indicators' ? indicatorEntries : []),
+      ...(perspectiveLayer === 'all' || perspectiveLayer === 'news' ? newsEntries : []),
+      ...(perspectiveLayer === 'all' || perspectiveLayer === 'events' ? eventEntries : []),
+    ].sort((first, second) => (second.timestamp ?? 0) - (first.timestamp ?? 0)).slice(0, 18)
+  }, [feed?.indicators, feed?.publishedAt, geoLocations, perspectiveRegion, perspectiveLayer, perspectiveConfidence, newsArticles, globalEvents])
 
   const filteredVulnerabilities = useMemo(() => {
     const query = vulnerabilitySearch.trim().toLowerCase()
@@ -1240,6 +1302,92 @@ function App() {
             </div>
             <div className="map-stage">{visibleLocations.length || (showEarthquakes && globalEvents.length) || (showNews && newsArticles.some((article) => article.location)) ? mapView === '3d' ? <GlobeMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <WorldMap indicators={visibleLocations} events={globalEvents} showEvents={showEarthquakes} news={newsArticles} showNews={showNews} selectedIp={selectedIp} selectedEventId={selectedEventId} selectedNewsId={selectedNewsId} onSelect={selectIndicator} onSelectEvent={setSelectedEventId} onSelectNews={setSelectedNewsId} /> : <div className="map-empty">{newsError ? `Global news unavailable: ${newsError}` : newsLoading ? 'Loading global news…' : eventsLoading ? 'Loading global events…' : geoLoading ? 'Resolving approximate IP locations…' : 'No indicators or global events are available to display.'}</div>}</div>
             <div className="map-footer"><div className="legend"><span className="legend-title">MAP KEY</span><span><i className="confidence-dot high" /> 6+ source lists</span><span><i className="confidence-dot medium" /> 3-5 source lists</span><span><i className="event-legend-dot" /> USGS earthquake</span><span><i className="news-legend-dot" /> BBC news area</span></div><span className="map-disclaimer">News areas are approximate headline place matches.</span></div>
+          </section>
+
+          <section className="events-panel intelligence-perspective-panel" id="intelligence-perspective" aria-labelledby="intelligence-perspective-title">
+            <div className="panel-heading events-heading">
+              <div>
+                <span className="perspective-eyebrow"><i /> INTELLIGENCE EXPLORER</span>
+                <h2 id="intelligence-perspective-title">Intelligence Perspective</h2>
+                <p>Explore public indicators, mapped world news, and natural events with their source context.</p>
+              </div>
+              <span className="timeline-source-badge">PUBLIC SOURCES</span>
+            </div>
+            <div className="perspective-controls">
+              <label>Region
+                <select value={perspectiveRegion} onChange={(event) => setPerspectiveRegion(event.target.value)}>
+                  <option value="all">All available regions</option>
+                  {availableCountries.map((country) => <option key={country} value={country}>{country}</option>)}
+                </select>
+              </label>
+              <label>Intelligence layer
+                <select value={perspectiveLayer} onChange={(event) => setPerspectiveLayer(event.target.value)}>
+                  <option value="all">All layers</option>
+                  <option value="indicators">IP reputation indicators</option>
+                  <option value="news">World news</option>
+                  <option value="events">Earthquakes (USGS)</option>
+                </select>
+              </label>
+              <label>Indicator consensus
+                <select value={perspectiveConfidence} onChange={(event) => setPerspectiveConfidence(event.target.value)} disabled={perspectiveLayer === 'news' || perspectiveLayer === 'events'}>
+                  <option value="all">All consensus levels</option>
+                  <option value="high">6+ source lists</option>
+                  <option value="medium">3–5 source lists</option>
+                </select>
+              </label>
+            </div>
+            <div className="perspective-stat-row">
+              <div><span>IP INDICATORS</span><strong>{formatNumber(feed?.indicators.length ?? 0)}</strong><small>{feed?.stale ? 'Cached feed' : 'IPsum public lists'}</small></div>
+              <div><span>MAPPED NEWS</span><strong>{formatNumber(newsArticles.filter((article) => article.location).length)}</strong><small>{newsStale ? 'Cached headlines' : 'BBC World'}</small></div>
+              <div><span>NATURAL EVENTS</span><strong>{formatNumber(globalEvents.length)}</strong><small>{eventsStale ? 'Cached USGS feed' : 'USGS past-day feed'}</small></div>
+            </div>
+            <div className="perspective-content-grid">
+              <div className="perspective-results">
+                <div className="perspective-results-heading"><strong>Available intelligence</strong><span>{formatNumber(perspectiveEntries.length)} shown · newest source timestamps first</span></div>
+                {perspectiveEntries.length ? (
+                  <div className="perspective-entry-list">
+                    {perspectiveEntries.map((entry) => (
+                      <button className={`perspective-entry ${perspectiveSelection?.id === entry.id ? 'perspective-entry-selected' : ''}`} key={entry.id} onClick={() => {
+                        setPerspectiveSelection(entry)
+                        if (entry.type === 'indicator') setSelectedIp(entry.ip)
+                        if (entry.type === 'news') { setSelectedNewsId(entry.articleId); setShowNews(true) }
+                        if (entry.type === 'event') { setSelectedEventId(entry.eventId); setShowEarthquakes(true) }
+                      }} aria-pressed={perspectiveSelection?.id === entry.id}>
+                        <span className={`perspective-type-dot perspective-type-${entry.type}`} />
+                        <span className="perspective-entry-copy">
+                          <span className="perspective-entry-meta">{entry.type === 'indicator' ? 'IP REPUTATION' : entry.type === 'news' ? 'WORLD NEWS' : 'NATURAL EVENT'} · {entry.location}</span>
+                          <strong>{entry.title}</strong>
+                          <span>{entry.summary}</span>
+                          <small>{entry.source} · {entry.timeLabel}</small>
+                        </span>
+                        <Icon name="chevron" size={15} />
+                      </button>
+                    ))}
+                  </div>
+                ) : <div className="events-empty">No items match these filters. Try another region or intelligence layer. Items without a usable location may not appear for a specific region.</div>}
+              </div>
+              <aside className="perspective-detail" aria-live="polite">
+                <span className="perspective-detail-label">SELECTED INTELLIGENCE</span>
+                {perspectiveSelection ? (
+                  <>
+                    <span className={`perspective-detail-kind perspective-type-${perspectiveSelection.type}`}>{perspectiveSelection.type === 'indicator' ? 'IP REPUTATION INDICATOR' : perspectiveSelection.type === 'news' ? 'PUBLISHED NEWS' : 'NATURAL EVENT'}</span>
+                    <h3>{perspectiveSelection.title}</h3>
+                    <p className="perspective-detail-location">{perspectiveSelection.location}</p>
+                    <p>{perspectiveSelection.summary}</p>
+                    <dl>
+                      <div><dt>Source</dt><dd>{perspectiveSelection.source}</dd></div>
+                      <div><dt>Source timestamp</dt><dd>{perspectiveSelection.timeLabel}</dd></div>
+                      {perspectiveSelection.type === 'indicator' && <div><dt>Consensus</dt><dd>{perspectiveSelection.consensus}+ public source lists</dd></div>}
+                      {perspectiveSelection.type === 'event' && <div><dt>Magnitude</dt><dd>{perspectiveSelection.magnitude.toFixed(1)}</dd></div>}
+                    </dl>
+                    {perspectiveSelection.url && <a className="perspective-source-link" href={perspectiveSelection.url} target="_blank" rel="noreferrer">Open original source <Icon name="arrow" size={13} /></a>}
+                  </>
+                ) : (
+                  <div className="perspective-detail-empty"><span>↖</span><strong>Select an intelligence item</strong><p>Its source, timestamp, location context, and limitations will appear here.</p></div>
+                )}
+              </aside>
+            </div>
+            <p className="perspective-disclaimer">Important: IP reputation indicators are not confirmed incidents; GeoIP locations are approximate and do not identify an attacker's physical location. News locations are approximate text matches. Earthquakes are natural events, not cyber threats. Source timestamps are not necessarily detection times.</p>
           </section>
 
           <section className="events-panel news-panel" id="news-panel" aria-labelledby="news-title">
