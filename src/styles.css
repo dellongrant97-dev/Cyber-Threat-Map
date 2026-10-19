@@ -1089,3 +1089,14 @@ h1 > span { color: var(--green); }
   .map-intelligence-summary { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .map-intelligence-summary > a { grid-column: 1; }
 }
+
+
+/* Unified continent appearance selector: additive styles for the existing 2D map and 3D globe. */
+.map-style-toggle { display: flex; align-items: center; gap: 3px; padding: 2px; border: 1px solid #293535; border-radius: 4px; background: #0a1011; }
+.map-style-toggle > span { padding: 0 5px; color: #64736f; font: 8px var(--mono, monospace); letter-spacing: .5px; }
+.map-style-toggle button { min-height: 22px; padding: 0 7px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #879491; font-size: 8px; white-space: nowrap; cursor: pointer; }
+.map-style-toggle button:hover { color: #dce7e1; }
+.map-style-toggle button.selected { border-color: #334435; background: #18221a; color: #c8efb5; }
+.world-map.land-style-clean .continents path { fill: #0e3527; stroke: #00b96b; stroke-width: 1.15; stroke-linejoin: round; opacity: .94; filter: none; }
+@media (max-width: 900px) { .map-style-toggle > span { display: none; } }
+@media (max-width: 650px) { .map-style-toggle button { padding-inline: 5px; font-size: 7px; } }
