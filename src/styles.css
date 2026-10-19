@@ -941,3 +941,37 @@ h1 > span { color: var(--green); }
 .perspective-disclaimer { margin: 13px 0 0; padding: 10px 11px; border-left: 2px solid #6b794b; background: #101612; color: #9ca79c; font-size: 9px; line-height: 1.7; }
 @media (max-width: 1100px) { .perspective-content-grid { grid-template-columns: minmax(0, 1fr); } .perspective-detail { position: static; } }
 @media (max-width: 700px) { .perspective-controls { grid-template-columns: minmax(0, 1fr); } .perspective-stat-row { gap: 6px; } .perspective-stat-row > div { padding: 9px 8px; } .perspective-stat-row strong { font-size: 17px; } .perspective-stat-row span { font-size: 7px; } .perspective-results-heading { align-items: flex-start; flex-direction: column; } .perspective-results-heading span { text-align: left; } }
+
+
+/* Keep the intelligence section discoverable even when responsive navigation hides labels. */
+.perspective-quick-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  margin: 0 0 14px;
+  padding: 0 13px;
+  border: 1px solid #28523c;
+  border-radius: 6px;
+  background: #101b15;
+  color: #baffd8;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.perspective-quick-link:hover,
+.perspective-quick-link:focus-visible {
+  border-color: var(--green);
+  background: #17271d;
+  color: #fff;
+  outline: 2px solid #00f28c;
+  outline-offset: 2px;
+}
+@media (max-width: 650px) {
+  .perspective-quick-link { width: 100%; justify-content: center; margin-bottom: 12px; }
+}
+
+/* Ensure the expand control stays clickable above the map and the viewer above all panels. */
+.news-zoom-image-wrap,
+.news-zoom-expand-button { pointer-events: auto; }
+.news-image-lightbox { z-index: 99999; }
