@@ -276,6 +276,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
       {selectedNewsPoint && (
         <aside className="news-zoom-card" role="group" aria-label={`Selected news story: ${selectedNewsPoint.title}`}>
           {selectedNewsPoint.imageUrl ? (
+            <div className="news-zoom-image-wrap">
             <img
               className="news-zoom-card-image"
               src={selectedNewsPoint.imageUrl}
@@ -307,6 +308,10 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
                 image.insertAdjacentElement('afterend', placeholder)
               }}
             />
+            <button className="news-zoom-expand-button" type="button" aria-label="Expand thumbnail to full size" title="View full image" onClick={() => setExpandedNewsImage(true)}>
+              <Icon name="arrow" size={16} />
+            </button>
+            </div>
           ) : (
             <div className="news-zoom-placeholder">IMAGE NOT PROVIDED BY FEED</div>
           )}
