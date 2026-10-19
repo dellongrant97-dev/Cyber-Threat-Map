@@ -25,6 +25,7 @@ import {
 import { buildThreatTrendModel } from './threatTrends.js'
 import { buildSourceHealthRows } from './sourceHealth.js'
 import { logClientError } from './clientLog.js'
+import { classifyEvidenceAge, describeIndicatorEvidence } from './intelligenceEvidence.js'
 
 const tabs = [
   { label: 'Overview', icon: 'grid', target: 'overview' },
@@ -1371,6 +1372,8 @@ function App() {
                       <strong>{selectedMapIndicator.ip}</strong>
                       <span>{selectedMapLocation ? [selectedMapLocation.city, selectedMapLocation.country].filter(Boolean).join(', ') : 'Approximate location unavailable'}</span>
                       <small>{selectedMapIndicator.consensus}+ IPsum public source-list matches · {feed?.publishedAt ? `Publisher snapshot: ${formatDate(feed.publishedAt)}` : 'Publisher timestamp unavailable'}</small>
+                      <span className={`evidence-age evidence-age-${classifyEvidenceAge(feed?.publishedAt).key}`}>Snapshot age: {classifyEvidenceAge(feed?.publishedAt).label}</span>
+                      <small>{describeIndicatorEvidence(selectedMapIndicator.consensus).label}</small>
                     </div>
                     <p>A reputation listing is a signal for investigation, not proof of an active attack. GeoIP indicates an approximate hosting/network location, not the person or organization behind the activity.</p>
                     <a href={threatFeedInfo.repository} target="_blank" rel="noreferrer">View IPsum source <Icon name="arrow" size={13} /></a>
@@ -1382,6 +1385,7 @@ function App() {
                       <strong>{selectedMapNews.title}</strong>
                       <span>{selectedMapNews.location ? `Approximate place match: ${selectedMapNews.location.name}` : 'No confident place match'}</span>
                       <small>BBC News World · {formatNewsTime(selectedMapNews.publishedAt)} UTC</small>
+                      <span className={`evidence-age evidence-age-${classifyEvidenceAge(selectedMapNews.publishedAt).key}`}>Report age: {classifyEvidenceAge(selectedMapNews.publishedAt).label}</span>
                     </div>
                     <p>{selectedMapNews.summary || 'The publisher has not supplied a summary.'} This is a news report; its mapped place is based on text matching and is not evidence of a cyber incident.</p>
                     <a href={selectedMapNews.url} target="_blank" rel="noreferrer">Open original BBC report <Icon name="arrow" size={13} /></a>
@@ -1393,6 +1397,7 @@ function App() {
                       <strong>{selectedMapEvent.place}</strong>
                       <span>Magnitude {selectedMapEvent.magnitude.toFixed(1)} earthquake</span>
                       <small>USGS · {formatEventTime(selectedMapEvent.occurredAt)} UTC</small>
+                      <span className={`evidence-age evidence-age-${classifyEvidenceAge(selectedMapEvent.occurredAt).key}`}>Event age: {classifyEvidenceAge(selectedMapEvent.occurredAt).label}</span>
                     </div>
                     <p>This is a natural event shown as a separate map layer. It is not a cybersecurity incident.</p>
                     <a href={selectedMapEvent.url} target="_blank" rel="noreferrer">Open USGS event <Icon name="arrow" size={13} /></a>
