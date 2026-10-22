@@ -240,7 +240,7 @@ async function fetchWithTimeout(fetchImpl, url, { responseType = 'json', timeout
   }
 }
 
-export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlParser } = {}) {
+export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlParser, textCleaner = cleanText } = {}) {
   const attempts = [
     async () => {
       const url = `${RSS_CONVERTER}?rss_url=${encodeURIComponent(BBC_WORLD_FEED)}&refresh=${now}`
@@ -260,7 +260,7 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
   for (const attempt of attempts) {
     try {
       const feed = await attempt()
-      const articles = normalizeGlobalNewsItems(feed.items, { now })
+      const articles = normalizeGlobalNewsItems(feed.items, { now, textCleaner })
       if (!articles.length) throw new Error('The news source returned no recent, valid headlines.')
       const result = { articles, updatedAt: now, source: feed.source, stale: false }
       writeJsonCache(CACHE_KEY, result)
