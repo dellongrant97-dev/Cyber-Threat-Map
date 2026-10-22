@@ -234,7 +234,7 @@ async function fetchWithTimeout(fetchImpl, url, { responseType = 'json', timeout
       cache: 'no-store',
     })
     if (!response.ok) throw new Error(`News provider returned HTTP ${response.status}.`)
-    return responseType === 'json' ? response.json() : response.text()
+    return responseType === 'json' ? await response.json() : await response.text()
   } finally {
     window.clearTimeout(timeout)
   }
@@ -252,7 +252,11 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
     },
     async () => {
       const xml = await fetchWithTimeout(fetchImpl, `${RSS_PROXY}${encodeURIComponent(BBC_WORLD_FEED)}&refresh=${now}`, { responseType: 'text' })
-      return { items: parseRssXml(xml, xmlParser), source: 'BBC News World (RSS fallback)' }
+      return { items: parseRssXml(xml, xmlParser), source: 'BBC News World (AllOrigins RSS fallback)' }
+    },
+    async () => {
+      const xml = await fetchWithTimeout(fetchImpl, `https://proxy.cors.dev/${BBC_WORLD_FEED}?refresh=${now}`, { responseType: 'text' })
+      return { items: parseRssXml(xml, xmlParser), source: 'BBC News World (CORS proxy fallback)' }
     },
   ]
 
