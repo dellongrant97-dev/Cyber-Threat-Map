@@ -2,6 +2,7 @@ import { readJsonCache, writeJsonCache } from './localCache.js'
 
 const BBC_WORLD_FEED = 'https://feeds.bbci.co.uk/news/world/rss.xml'
 const RSS_CONVERTER = 'https://api.rss2json.com/v1/api.json'
+const RSS_PROXY = 'https://api.allorigins.win/raw?url='
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
@@ -203,33 +204,73 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
   return articles.slice(0, MAX_NEWS_ITEMS)
 }
 
-export async function loadGlobalNews() {
+function parseRssXml(xmlText, parser = new DOMParser()) {
+  const document = parser.parseFromString(xmlText, 'application/xml')
+  if (document.querySelector('parsererror')) throw new Error('BBC World RSS returned invalid XML.')
+  const items = [...document.querySelectorAll('item')].map((item) => {
+    const value = (name) => item.getElementsByTagName(name)[0]?.textContent?.trim() || ''
+    const thumbnail = item.getElementsByTagName('media:thumbnail')[0]?.getAttribute('url')
+      || item.getElementsByTagName('enclosure')[0]?.getAttribute('url')
+      || ''
+    return {
+      title: value('title'),
+      description: value('description'),
+      link: value('link'),
+      pubDate: value('pubDate'),
+      thumbnail,
+    }
+  })
+  if (!items.length) throw new Error('BBC World RSS returned no readable articles.')
+  return items
+}
+
+async function fetchWithTimeout(fetchImpl, url, { responseType = 'json', timeoutMs = 12000 } = {}) {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 20000)
-  const url = `${RSS_CONVERTER}?rss_url=${encodeURIComponent(BBC_WORLD_FEED)}`
-
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } })
-    if (!response.ok) throw new Error(`BBC World news feed returned HTTP ${response.status}.`)
-    const feed = await response.json()
-    if (feed?.status !== 'ok' || !Array.isArray(feed?.items)) {
-      throw new Error(feed?.message || 'The BBC World news feed returned invalid data.')
-    }
-
-    const result = {
-      articles: normalizeGlobalNewsItems(feed.items),
-      updatedAt: Date.now(),
-      source: feed.feed?.title || 'BBC News',
-      stale: false,
-    }
-    writeJsonCache(CACHE_KEY, result)
-    return result
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('The world news feed request timed out. Please retry.')
-    throw error
+    const response = await fetchImpl(url, {
+      signal: controller.signal,
+      headers: { Accept: responseType === 'json' ? 'application/json' : 'application/rss+xml, application/xml, text/xml' },
+      cache: 'no-store',
+    })
+    if (!response.ok) throw new Error(`News provider returned HTTP ${response.status}.`)
+    return responseType === 'json' ? response.json() : response.text()
   } finally {
     window.clearTimeout(timeout)
   }
+}
+
+export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlParser } = {}) {
+  const attempts = [
+    async () => {
+      const url = `${RSS_CONVERTER}?rss_url=${encodeURIComponent(BBC_WORLD_FEED)}&refresh=${now}`
+      const feed = await fetchWithTimeout(fetchImpl, url)
+      if (feed?.status !== 'ok' || !Array.isArray(feed?.items)) {
+        throw new Error(feed?.message || 'RSS-to-JSON converter returned invalid data.')
+      }
+      return { items: feed.items, source: feed.feed?.title || 'BBC News (RSS-to-JSON)' }
+    },
+    async () => {
+      const xml = await fetchWithTimeout(fetchImpl, `${RSS_PROXY}${encodeURIComponent(BBC_WORLD_FEED)}&refresh=${now}`, { responseType: 'text' })
+      return { items: parseRssXml(xml, xmlParser), source: 'BBC News World (RSS fallback)' }
+    },
+  ]
+
+  const errors = []
+  for (const attempt of attempts) {
+    try {
+      const feed = await attempt()
+      const articles = normalizeGlobalNewsItems(feed.items, { now })
+      if (!articles.length) throw new Error('The news source returned no recent, valid headlines.')
+      const result = { articles, updatedAt: now, source: feed.source, stale: false }
+      writeJsonCache(CACHE_KEY, result)
+      return result
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : 'Unknown feed error.')
+    }
+  }
+
+  throw new Error(`All news refresh routes failed. ${errors.join(' ')} The last successful cached headlines, if any, remain available.`)
 }
 
 export const globalNewsInfo = {
