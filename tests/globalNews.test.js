@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeGlobalNewsItems } from '../src/globalNews.js'
+import { loadGlobalNews, normalizeGlobalNewsItems } from '../src/globalNews.js'
 
 const now = Date.parse('2026-10-10T12:00:00Z')
 const clean = (value = '') => value.replace(/<[^>]*>/g, '').trim()
@@ -71,4 +71,61 @@ test('normalizeGlobalNewsItems limits results and rejects malformed feed data', 
 
   assert.equal(normalizeGlobalNewsItems(items, { now, textCleaner: clean }).length, 30)
   assert.throws(() => normalizeGlobalNewsItems(null), /invalid data/)
+})
+
+
+test('loadGlobalNews falls back to the RSS proxy when the JSON converter fails', async () => {
+  const previousWindow = globalThis.window
+  const calls = []
+  const fallbackNow = Date.parse('2026-10-22T12:00:00Z')
+  const values = {
+    title: 'Fresh BBC World headline about Kenya',
+    description: '<p>Latest report from Kenya.</p>',
+    link: 'https://www.bbc.co.uk/news/articles/fresh-test',
+    pubDate: new Date(fallbackNow - 60_000).toISOString(),
+  }
+  const rssItem = {
+    getElementsByTagName(name) {
+      if (name === 'media:thumbnail' || name === 'enclosure') return []
+      return [{ textContent: values[name] || '', getAttribute: () => '' }]
+    },
+  }
+  const xmlParser = {
+    parseFromString() {
+      return {
+        querySelector: () => null,
+        querySelectorAll: () => [rssItem],
+      }
+    },
+  }
+
+  globalThis.window = {
+    setTimeout,
+    clearTimeout,
+    localStorage: { setItem() {} },
+  }
+
+  try {
+    const result = await loadGlobalNews({
+      now: fallbackNow,
+      xmlParser,
+      textCleaner: (value = '') => value.replace(/<[^>]*>/g, '').trim(),
+      fetchImpl: async (url) => {
+        calls.push(url)
+        if (calls.length === 1) return { ok: false, status: 503 }
+        return { ok: true, text: async () => '<rss><channel><item /></channel></rss>' }
+      },
+    })
+
+    assert.equal(calls.length, 2)
+    assert.match(calls[0], /api\.rss2json\.com/)
+    assert.match(calls[1], /api\.allorigins\.win/)
+    assert.equal(result.stale, false)
+    assert.equal(result.updatedAt, fallbackNow)
+    assert.equal(result.source, 'BBC News World (RSS fallback)')
+    assert.equal(result.articles[0].title, values.title)
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+  }
 })
