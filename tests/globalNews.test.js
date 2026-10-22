@@ -175,9 +175,9 @@ test('loadGlobalNews tries the third CORS proxy when both earlier routes fail', 
     })
 
     assert.equal(calls.length, 3)
-    assert.match(calls[0], /api\\.rss2json\\.com/)
-    assert.match(calls[1], /api\\.allorigins\\.win/)
-    assert.match(calls[2], /proxy\\.cors\\.dev/)
+    assert.ok(calls[0].includes('api.rss2json.com'))
+    assert.ok(calls[1].includes('api.allorigins.win'))
+    assert.ok(calls[2].includes('proxy.cors.dev'))
     assert.equal(result.stale, false)
     assert.equal(result.updatedAt, fallbackNow)
     assert.equal(result.source, 'BBC News World (CORS proxy fallback)')
