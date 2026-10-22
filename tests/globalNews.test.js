@@ -122,7 +122,65 @@ test('loadGlobalNews falls back to the RSS proxy when the JSON converter fails',
     assert.match(calls[1], /api\.allorigins\.win/)
     assert.equal(result.stale, false)
     assert.equal(result.updatedAt, fallbackNow)
-    assert.equal(result.source, 'BBC News World (RSS fallback)')
+    assert.equal(result.source, 'BBC News World (AllOrigins RSS fallback)')
+    assert.equal(result.articles[0].title, values.title)
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+  }
+})
+
+
+test('loadGlobalNews tries the third CORS proxy when both earlier routes fail', async () => {
+  const previousWindow = globalThis.window
+  const calls = []
+  const fallbackNow = Date.parse('2026-10-22T12:00:00Z')
+  const values = {
+    title: 'Third-route fresh BBC World headline',
+    description: '<p>Latest report from Kenya.</p>',
+    link: 'https://www.bbc.co.uk/news/articles/third-route-test',
+    pubDate: new Date(fallbackNow - 60_000).toISOString(),
+  }
+  const rssItem = {
+    getElementsByTagName(name) {
+      if (name === 'media:thumbnail' || name === 'enclosure') return []
+      return [{ textContent: values[name] || '', getAttribute: () => '' }]
+    },
+  }
+  const xmlParser = {
+    parseFromString() {
+      return {
+        querySelector: () => null,
+        querySelectorAll: () => [rssItem],
+      }
+    },
+  }
+
+  globalThis.window = {
+    setTimeout,
+    clearTimeout,
+    localStorage: { setItem() {} },
+  }
+
+  try {
+    const result = await loadGlobalNews({
+      now: fallbackNow,
+      xmlParser,
+      textCleaner: (value = '') => value.replace(/<[^>]*>/g, '').trim(),
+      fetchImpl: async (url) => {
+        calls.push(url)
+        if (calls.length < 3) return { ok: false, status: 503 }
+        return { ok: true, text: async () => '<rss><channel><item /></channel></rss>' }
+      },
+    })
+
+    assert.equal(calls.length, 3)
+    assert.ok(calls[0].includes('api.rss2json.com'))
+    assert.ok(calls[1].includes('api.allorigins.win'))
+    assert.ok(calls[2].includes('proxy.cors.dev'))
+    assert.equal(result.stale, false)
+    assert.equal(result.updatedAt, fallbackNow)
+    assert.equal(result.source, 'BBC News World (CORS proxy fallback)')
     assert.equal(result.articles[0].title, values.title)
   } finally {
     if (previousWindow === undefined) delete globalThis.window
