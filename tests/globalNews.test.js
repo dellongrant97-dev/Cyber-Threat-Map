@@ -122,7 +122,7 @@ test('loadGlobalNews falls back to the RSS proxy when the JSON converter fails',
     assert.match(calls[1], /api\.allorigins\.win/)
     assert.equal(result.stale, false)
     assert.equal(result.updatedAt, fallbackNow)
-    assert.equal(result.source, 'BBC News World (RSS fallback)')
+    assert.equal(result.source, 'BBC News World (AllOrigins RSS fallback)')
     assert.equal(result.articles[0].title, values.title)
   } finally {
     if (previousWindow === undefined) delete globalThis.window
