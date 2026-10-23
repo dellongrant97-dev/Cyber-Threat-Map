@@ -6,7 +6,7 @@ const RSS_PROXY = 'https://api.allorigins.win/raw?url='
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
-const CACHE_KEY = 'sentinel-global-news-v4'
+const CACHE_KEY = 'sentinel-global-news-v5'
 
 const headlineLocations = [
   { name: 'New York City, United States', latitude: 40.7128, longitude: -74.006, precision: 'city', terms: ['New York City', "New York City's", 'New York', 'NYC', 'Bronx', 'Marble Hill'] },
@@ -150,6 +150,8 @@ function isValidNewsCache(cache) {
       && (!article.imageUrl || getSafeBbcImageUrl(article.imageUrl) === article.imageUrl)
       && (!article.imageUrls || (Array.isArray(article.imageUrls) && article.imageUrls.every((url) => getSafeBbcImageUrl(url) === url)))
       && Number.isFinite(article.publishedAt)
+      && article.publishedAt <= Date.now() + 60 * 60 * 1000
+      && article.publishedAt >= Date.now() - NEWS_WINDOW_MS
       && (!article.location || (
         typeof article.location.name === 'string'
         && Number.isFinite(article.location.latitude)

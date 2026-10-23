@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadGlobalNews, normalizeGlobalNewsItems } from '../src/globalNews.js'
+import { loadCachedGlobalNews, loadGlobalNews, normalizeGlobalNewsItems } from '../src/globalNews.js'
 
 const now = Date.parse('2026-10-10T12:00:00Z')
 const clean = (value = '') => value.replace(/<[^>]*>/g, '').trim()
@@ -187,6 +187,29 @@ test('loadGlobalNews tries the third CORS proxy when both earlier routes fail', 
     assert.equal(result.updatedAt, fallbackNow)
     assert.equal(result.source, 'BBC News World (CORS proxy fallback)')
     assert.equal(result.articles[0].title, values.title)
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+  }
+})
+
+
+test('loadCachedGlobalNews rejects headlines older than the 48-hour window', () => {
+  const previousWindow = globalThis.window
+  const oldPublishedAt = Date.now() - 3 * 365 * 24 * 60 * 60 * 1000
+  const oldCache = {
+    updatedAt: oldPublishedAt,
+    articles: [{
+      id: 'https://www.bbc.co.uk/news/articles/old-story',
+      title: 'Three-year-old headline',
+      summary: 'Old summary',
+      url: 'https://www.bbc.co.uk/news/articles/old-story',
+      publishedAt: oldPublishedAt,
+    }],
+  }
+  globalThis.window = { localStorage: { getItem: () => JSON.stringify(oldCache) } }
+  try {
+    assert.equal(loadCachedGlobalNews(), null)
   } finally {
     if (previousWindow === undefined) delete globalThis.window
     else globalThis.window = previousWindow
