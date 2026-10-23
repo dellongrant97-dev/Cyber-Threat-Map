@@ -85,7 +85,7 @@ function getSafeBbcStoryUrl(value) {
   if (typeof value !== 'string') return ''
   try {
     const url = new URL(value)
-    if (url.protocol !== 'https:' || url.hostname !== 'www.bbc.co.uk' || url.username || url.password) return ''
+    if (url.protocol !== 'https:' || !['www.bbc.co.uk', 'www.bbc.com'].includes(url.hostname.toLowerCase()) || url.username || url.password) return ''
     return url.href
   } catch {
     return ''
