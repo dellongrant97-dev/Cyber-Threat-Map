@@ -46,10 +46,15 @@ test('normalizeGlobalNewsItems rejects credentialed and lookalike BBC links', ()
   const articles = normalizeGlobalNewsItems([
     item('Credentialed URL', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.co.uk@attacker.example/story' }),
     item('Lookalike host', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.co.uk.attacker.example/story' }),
+    item('BBC.com lookalike host', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.com.attacker.example/story' }),
     item('HTTP link', '2026-10-10T11:00:00Z', { link: 'http://www.bbc.co.uk/story' }),
-    item('Valid BBC link', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.co.uk/story' }),
+    item('Valid BBC UK link', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.co.uk/story' }),
+    item('Valid BBC.com link', '2026-10-10T11:00:00Z', { link: 'https://www.bbc.com/news/articles/current-story' }),
   ], { now, textCleaner: (value) => value })
-  assert.deepEqual(articles.map((article) => article.url), ['https://www.bbc.co.uk/story'])
+  assert.deepEqual(articles.map((article) => article.url), [
+    'https://www.bbc.co.uk/story',
+    'https://www.bbc.com/news/articles/current-story',
+  ])
 })
 
 
