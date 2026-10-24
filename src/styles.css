@@ -1106,3 +1106,10 @@ h1 > span { color: var(--green); }
 .world-map.land-style-clean .continents > path:first-child { fill: #0e3527; stroke: #00b96b; stroke-width: 1.15; stroke-linejoin: round; opacity: .94; }
 .world-map.land-style-clean .continents .country-boundary { fill: none; stroke: rgba(0, 242, 140, .55); stroke-width: .55; vector-effect: non-scaling-stroke; pointer-events: all; cursor: crosshair; }
 .world-map.land-style-clean .continents .country-boundary:hover { stroke: #e2ffef; stroke-width: 1.25; }
+
+.news-source-preferences { display: grid; gap: 7px; padding: 10px 12px; border-bottom: 1px solid #1b2527; color: #8e9995; font-size: 9px; }
+.news-source-preferences > strong { color: #cda3ed; font-size: 10px; }
+.news-source-preferences > div { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.news-source-preferences label { display: inline-flex; align-items: center; gap: 5px; color: #c4ceca; cursor: pointer; }
+.news-source-preferences input { accent-color: #cda3ed; }
+.news-source-preferences small { color: #778482; line-height: 1.5; }
