@@ -2,8 +2,8 @@ import { readJsonCache, writeJsonCache } from './localCache.js'
 
 export const newsSourceOptions = [
   { id: 'aljazeera', name: 'Al Jazeera English', feed: 'https://www.aljazeera.com/xml/rss/all.xml', hosts: ['www.aljazeera.com'] },
-  { id: 'reuters', name: 'Reuters', feed: 'https://www.reuters.com/rssFeed/worldNews', hosts: ['www.reuters.com'] },
-  { id: 'ap', name: 'Associated Press', feed: 'https://apnews.com/hub/world-news?output=rss', hosts: ['apnews.com', 'www.apnews.com'] },
+  { id: 'reuters', name: 'Reuters (via Google News RSS)', feed: 'https://news.google.com/rss/search?q=when:2d+site:reuters.com/world&ceid=US:en&hl=en-US&gl=US', hosts: ['www.reuters.com', 'news.google.com'] },
+  { id: 'ap', name: 'Associated Press (via Google News RSS)', feed: 'https://news.google.com/rss/search?q=when:2d+site:apnews.com&ceid=US:en&hl=en-US&gl=US', hosts: ['apnews.com', 'www.apnews.com', 'news.google.com'] },
   { id: 'dw', name: 'Deutsche Welle (DW)', feed: 'https://rss.dw.com/rdf/rss-en-all', hosts: ['www.dw.com', 'dw.com'] },
   { id: 'guardian', name: 'The Guardian', feed: 'https://www.theguardian.com/world/rss', hosts: ['www.theguardian.com'] },
   { id: 'bbc', name: 'BBC News', feed: 'https://feeds.bbci.co.uk/news/world/rss.xml', hosts: ['www.bbc.co.uk', 'www.bbc.com'], imageHosts: ['ichef.bbci.co.uk', 'bbci.co.uk', 'www.bbc.co.uk', 'www.bbc.com'] },
