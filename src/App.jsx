@@ -891,7 +891,7 @@ function App() {
     const next = checked ? [...new Set([...newsSources, sourceId])] : newsSources.filter((id) => id !== sourceId)
     if (!next.length) return
     setNewsSources(next)
-    setNewsArticles((current) => current.filter((article) => next.includes(article.sourceId || 'bbc'))
+    setNewsArticles((current) => current.filter((article) => next.includes(article.sourceId || 'bbc')))
     try { window.localStorage.setItem('cyber-threat-map-news-sources', JSON.stringify(next)) } catch { /* preference storage is optional */ }
   }
 
