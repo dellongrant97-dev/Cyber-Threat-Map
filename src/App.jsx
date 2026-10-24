@@ -268,7 +268,7 @@ function WorldMap({ indicators, events, showEvents, news, showNews, selectedIp, 
             <circle className="news-point-area" r={selectedNewsId === article.id ? 38 : article.location.precision === 'city' ? 20 : 32} />
             <circle className="news-point-core" r="4" />
             <text className="news-point-label" x="8" y="-8">{article.location.name}</text>
-            <title>{article.location.name} · approx. {article.location.precision} match · {article.title} · BBC News</title>
+            <title>{article.location.name} · approx. {article.location.precision} match · {article.title} · {article.sourceName || 'News publisher'}</title>
           </g>
         ))}
       </g>
@@ -1078,7 +1078,7 @@ function App() {
       location: article.location?.name ?? 'No confident location match',
       country: article.location?.name ?? '',
       summary: article.summary || 'Open the publisher article for more details.',
-      source: 'BBC News World',
+      source: article.sourceName || 'News publisher',
       timestamp: article.publishedAt ?? null,
       timeLabel: article.publishedAt ? `${formatNewsTime(article.publishedAt)} UTC` : 'Publication time unavailable',
       url: article.url,
@@ -1474,11 +1474,11 @@ function App() {
                     <div className="map-intelligence-primary">
                       <strong>{selectedMapNews.title}</strong>
                       <span>{selectedMapNews.location ? `Approximate place match: ${selectedMapNews.location.name}` : 'No confident place match'}</span>
-                      <small>BBC News World · {formatNewsTime(selectedMapNews.publishedAt)} UTC</small>
+                      <small>{selectedMapNews.sourceName || 'News publisher'} · {formatNewsTime(selectedMapNews.publishedAt)} UTC</small>
                       <span className={`evidence-age evidence-age-${classifyEvidenceAge(selectedMapNews.publishedAt).key}`}>Report age: {classifyEvidenceAge(selectedMapNews.publishedAt).label}</span>
                     </div>
                     <p>{selectedMapNews.summary || 'The publisher has not supplied a summary.'} This is a news report; its mapped place is based on text matching and is not evidence of a cyber incident.</p>
-                    <a href={selectedMapNews.url} target="_blank" rel="noreferrer">Open original BBC report <Icon name="arrow" size={13} /></a>
+                    <a href={selectedMapNews.url} target="_blank" rel="noreferrer">Open original news report <Icon name="arrow" size={13} /></a>
                   </div>
                 )}
                 {selectedMapEvent && (
