@@ -259,6 +259,7 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
   const articles = []
   const errors = []
   const successfulSources = []
+  const sourceErrors = []
   for (const sourceId of selectedSources) {
     const source = sourceById.get(sourceId)
     const attempts = [
@@ -280,6 +281,7 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
       },
     ]
     let loaded = false
+    const sourceAttemptErrors = []
     for (const attempt of attempts) {
       try {
         const feed = await attempt()
@@ -290,10 +292,12 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
         loaded = true
         break
       } catch (error) {
-        errors.push(`${source.name}: ${error instanceof Error ? error.message : 'Unknown feed error.'}`)
+        const message = error instanceof Error ? error.message : 'Unknown feed error.'
+        errors.push(`${source.name}: ${message}`)
+        sourceAttemptErrors.push(message)
       }
     }
-    if (!loaded) continue
+    if (!loaded) sourceErrors.push(`${source.name}: ${sourceAttemptErrors.at(-1) || 'Feed unavailable.'}`)
   }
 
   const uniqueArticles = [...new Map(articles
@@ -302,7 +306,7 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
   if (!uniqueArticles.length) {
     throw new Error(`No selected news source could provide recent headlines. ${errors.join(' ')}`)
   }
-  const result = { articles: uniqueArticles, updatedAt: now, successfulSources, sourceIds: selectedSources, stale: false }
+  const result = { articles: uniqueArticles, updatedAt: now, successfulSources, sourceErrors, sourceIds: selectedSources, stale: false }
   writeJsonCache(CACHE_KEY, result)
   return result
 }
