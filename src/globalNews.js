@@ -1,12 +1,21 @@
 import { readJsonCache, writeJsonCache } from './localCache.js'
 
-const BBC_WORLD_FEED = 'https://feeds.bbci.co.uk/news/world/rss.xml'
+export const newsSourceOptions = [
+  { id: 'aljazeera', name: 'Al Jazeera English', feed: 'https://www.aljazeera.com/xml/rss/all.xml', hosts: ['www.aljazeera.com'] },
+  { id: 'reuters', name: 'Reuters', feed: 'https://www.reuters.com/rssFeed/worldNews', hosts: ['www.reuters.com'] },
+  { id: 'ap', name: 'Associated Press', feed: 'https://apnews.com/hub/world-news?output=rss', hosts: ['apnews.com', 'www.apnews.com'] },
+  { id: 'dw', name: 'Deutsche Welle (DW)', feed: 'https://rss.dw.com/rdf/rss-en-all', hosts: ['www.dw.com', 'dw.com'] },
+  { id: 'guardian', name: 'The Guardian', feed: 'https://www.theguardian.com/world/rss', hosts: ['www.theguardian.com'] },
+  { id: 'bbc', name: 'BBC News', feed: 'https://feeds.bbci.co.uk/news/world/rss.xml', hosts: ['www.bbc.co.uk', 'www.bbc.com'] },
+]
+export const DEFAULT_NEWS_SOURCE_IDS = newsSourceOptions.map((source) => source.id)
+const sourceById = new Map(newsSourceOptions.map((source) => [source.id, source]))
 const RSS_CONVERTER = 'https://api.rss2json.com/v1/api.json'
 const RSS_PROXY = 'https://api.allorigins.win/raw?url='
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
-const CACHE_KEY = 'sentinel-global-news-v5'
+const CACHE_KEY = 'sentinel-global-news-v6'
 
 const headlineLocations = [
   { name: 'New York City, United States', latitude: 40.7128, longitude: -74.006, precision: 'city', terms: ['New York City', "New York City's", 'New York', 'NYC', 'Bronx', 'Marble Hill'] },
@@ -81,25 +90,24 @@ function cleanText(value) {
   return document.body.textContent.replace(/\s+/g, ' ').trim()
 }
 
-function getSafeBbcStoryUrl(value) {
+function getSafeStoryUrl(value, sourceId) {
   if (typeof value !== 'string') return ''
   try {
     const url = new URL(value)
-    if (url.protocol !== 'https:' || !['www.bbc.co.uk', 'www.bbc.com'].includes(url.hostname.toLowerCase()) || url.username || url.password) return ''
+    const source = sourceById.get(sourceId)
+    if (!source || url.protocol !== 'https:' || !source.hosts.includes(url.hostname.toLowerCase()) || url.username || url.password) return ''
     return url.href
   } catch {
     return ''
   }
 }
 
-function getSafeBbcImageUrl(value) {
+function getSafeImageUrl(value, sourceId) {
   if (typeof value !== 'string') return ''
   try {
     const url = new URL(value)
-    const host = url.hostname.toLowerCase()
-    const isBbcImageHost = host === 'bbci.co.uk' || host.endsWith('.bbci.co.uk')
-      || host === 'bbc.co.uk' || host.endsWith('.bbc.co.uk')
-    if (url.protocol !== 'https:' || !isBbcImageHost || url.pathname === '/' || url.username || url.password) return ''
+    const source = sourceById.get(sourceId)
+    if (!source || url.protocol !== 'https:' || !source.hosts.includes(url.hostname.toLowerCase()) || url.pathname === '/' || url.username || url.password) return ''
     return url.href
   } catch {
     return ''
@@ -125,7 +133,7 @@ function getDescriptionImageSources(html) {
     .map((match) => match[1] ?? match[2] ?? match[3] ?? '')
 }
 
-function getNewsImageUrls(item) {
+function getNewsImageUrls(item, sourceId) {
   const candidates = [
     ...collectImageUrls(item?.thumbnail),
     ...collectImageUrls(item?.['media:thumbnail']),
@@ -135,7 +143,7 @@ function getNewsImageUrls(item) {
     ...getDescriptionImageSources(item?.description),
   ]
   return [...new Set(candidates
-    .map((candidate) => getSafeBbcImageUrl(candidate))
+    .map((candidate) => getSafeImageUrl(candidate, sourceId))
     .filter(Boolean))]
 }
 
@@ -146,9 +154,9 @@ function isValidNewsCache(cache) {
       typeof article.id === 'string'
       && typeof article.title === 'string'
       && typeof article.summary === 'string'
-      && getSafeBbcStoryUrl(article.url) === article.url
-      && (!article.imageUrl || getSafeBbcImageUrl(article.imageUrl) === article.imageUrl)
-      && (!article.imageUrls || (Array.isArray(article.imageUrls) && article.imageUrls.every((url) => getSafeBbcImageUrl(url) === url)))
+      && getSafeStoryUrl(article.url, article.sourceId || 'bbc') === article.url
+      && (!article.imageUrl || getSafeImageUrl(article.imageUrl, article.sourceId || 'bbc') === article.imageUrl)
+      && (!article.imageUrls || (Array.isArray(article.imageUrls) && article.imageUrls.every((url) => getSafeImageUrl(url, article.sourceId || 'bbc') === url)))
       && Number.isFinite(article.publishedAt)
       && article.publishedAt <= Date.now() + 60 * 60 * 1000
       && article.publishedAt >= Date.now() - NEWS_WINDOW_MS
@@ -169,12 +177,12 @@ export function loadCachedGlobalNews() {
   return cache ? { ...cache, stale: true } : null
 }
 
-export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner = cleanText } = {}) {
-  if (!Array.isArray(items)) throw new Error('The BBC World news feed returned invalid data.')
+export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner = cleanText, sourceId = 'bbc' } = {}) {
+  if (!Array.isArray(items)) throw new Error('The selected news feed returned invalid data.')
   const articles = items.flatMap((item) => {
     const title = textCleaner(item?.title)
     const summary = textCleaner(item?.description)
-    const link = getSafeBbcStoryUrl(item?.link)
+    const link = getSafeStoryUrl(item?.link, sourceId)
     const rawPublishedAt = item?.pubDate
     const explicitTimezone = typeof rawPublishedAt === 'string' && /(?:Z|GMT|UTC|[+-]\d{2}:?\d{2})$/i.test(rawPublishedAt.trim())
     const publishedAt = explicitTimezone
@@ -194,12 +202,14 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
       id: link,
       title,
       summary,
-      imageUrls: getNewsImageUrls(item),
-      imageUrl: getNewsImageUrls(item)[0] || '',
+      imageUrls: getNewsImageUrls(item, sourceId),
+      imageUrl: getNewsImageUrls(item, sourceId)[0] || '',
       url: link,
       publishedAt,
       location,
       locationBasis: location ? (titleLocation ? 'headline' : 'summary') : null,
+      sourceId,
+      sourceName: sourceById.get(sourceId)?.name || 'News source',
     }]
   }).sort((first, second) => second.publishedAt - first.publishedAt)
 
@@ -208,7 +218,7 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
 
 function parseRssXml(xmlText, parser = new DOMParser()) {
   const document = parser.parseFromString(xmlText, 'application/xml')
-  if (document.querySelector('parsererror')) throw new Error('BBC World RSS returned invalid XML.')
+  if (document.querySelector('parsererror')) throw new Error('News RSS returned invalid XML.')
   const items = [...document.querySelectorAll('item')].map((item) => {
     const value = (name) => item.getElementsByTagName(name)[0]?.textContent?.trim() || ''
     const thumbnail = item.getElementsByTagName('media:thumbnail')[0]?.getAttribute('url')
@@ -222,7 +232,7 @@ function parseRssXml(xmlText, parser = new DOMParser()) {
       thumbnail,
     }
   })
-  if (!items.length) throw new Error('BBC World RSS returned no readable articles.')
+  if (!items.length) throw new Error('News RSS returned no readable articles.')
   return items
 }
 
@@ -242,46 +252,64 @@ async function fetchWithTimeout(fetchImpl, url, { responseType = 'json', timeout
   }
 }
 
-export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlParser, textCleaner = cleanText } = {}) {
-  const attempts = [
-    async () => {
-      const url = `${RSS_CONVERTER}?rss_url=${encodeURIComponent(BBC_WORLD_FEED)}&refresh=${now}`
-      const feed = await fetchWithTimeout(fetchImpl, url)
-      if (feed?.status !== 'ok' || !Array.isArray(feed?.items)) {
-        throw new Error(feed?.message || 'RSS-to-JSON converter returned invalid data.')
-      }
-      return { items: feed.items, source: feed.feed?.title || 'BBC News (RSS-to-JSON)' }
-    },
-    async () => {
-      const xml = await fetchWithTimeout(fetchImpl, `${RSS_PROXY}${encodeURIComponent(BBC_WORLD_FEED)}&refresh=${now}`, { responseType: 'text' })
-      return { items: parseRssXml(xml, xmlParser), source: 'BBC News World (AllOrigins RSS fallback)' }
-    },
-    async () => {
-      const xml = await fetchWithTimeout(fetchImpl, `https://proxy.cors.dev/${BBC_WORLD_FEED}?refresh=${now}`, { responseType: 'text' })
-      return { items: parseRssXml(xml, xmlParser), source: 'BBC News World (CORS proxy fallback)' }
-    },
-  ]
+export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlParser, textCleaner = cleanText, sourceIds = DEFAULT_NEWS_SOURCE_IDS } = {}) {
+  const selectedSources = [...new Set(sourceIds)].filter((id) => sourceById.has(id))
+  if (!selectedSources.length) throw new Error('Select at least one news source to refresh world news.')
 
+  const articles = []
   const errors = []
-  for (const attempt of attempts) {
-    try {
-      const feed = await attempt()
-      const articles = normalizeGlobalNewsItems(feed.items, { now, textCleaner })
-      if (!articles.length) throw new Error('The news source returned no recent, valid headlines.')
-      const result = { articles, updatedAt: now, source: feed.source, stale: false }
-      writeJsonCache(CACHE_KEY, result)
-      return result
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : 'Unknown feed error.')
+  const successfulSources = []
+  for (const sourceId of selectedSources) {
+    const source = sourceById.get(sourceId)
+    const attempts = [
+      async () => {
+        const url = `${RSS_CONVERTER}?rss_url=${encodeURIComponent(source.feed)}&refresh=${now}`
+        const feed = await fetchWithTimeout(fetchImpl, url)
+        if (feed?.status !== 'ok' || !Array.isArray(feed?.items)) {
+          throw new Error(feed?.message || 'RSS-to-JSON converter returned invalid data.')
+        }
+        return { items: feed.items }
+      },
+      async () => {
+        const xml = await fetchWithTimeout(fetchImpl, `${RSS_PROXY}${encodeURIComponent(source.feed)}&refresh=${now}`, { responseType: 'text' })
+        return { items: parseRssXml(xml, xmlParser) }
+      },
+      async () => {
+        const xml = await fetchWithTimeout(fetchImpl, `https://proxy.cors.dev/${source.feed}?refresh=${now}`, { responseType: 'text' })
+        return { items: parseRssXml(xml, xmlParser) }
+      },
+    ]
+    let loaded = false
+    for (const attempt of attempts) {
+      try {
+        const feed = await attempt()
+        const normalized = normalizeGlobalNewsItems(feed.items, { now, textCleaner, sourceId })
+        if (!normalized.length) throw new Error('No recent, valid headlines were returned.')
+        articles.push(...normalized)
+        successfulSources.push(sourceId)
+        loaded = true
+        break
+      } catch (error) {
+        errors.push(`${source.name}: ${error instanceof Error ? error.message : 'Unknown feed error.'}`)
+      }
     }
+    if (!loaded) continue
   }
 
-  throw new Error(`All news refresh routes failed. ${errors.join(' ')} The last successful cached headlines, if any, remain available.`)
+  const uniqueArticles = [...new Map(articles
+    .sort((first, second) => second.publishedAt - first.publishedAt)
+    .map((article) => [article.url, article])).values()].slice(0, MAX_NEWS_ITEMS)
+  if (!uniqueArticles.length) {
+    throw new Error(`No selected news source could provide recent headlines. ${errors.join(' ')}`)
+  }
+  const result = { articles: uniqueArticles, updatedAt: now, successfulSources, sourceIds: selectedSources, stale: false }
+  writeJsonCache(CACHE_KEY, result)
+  return result
 }
 
 export const globalNewsInfo = {
-  name: 'BBC World (via rss2json converter)',
-  source: 'https://www.bbc.co.uk/news/world',
-  converter: RSS_CONVERTER,
+  name: 'Selected global news publishers',
+  source: 'https://www.aljazeera.com/',
   refreshMinutes: NEWS_REFRESH_MINUTES,
+  maxAgeHours: 48,
 }
