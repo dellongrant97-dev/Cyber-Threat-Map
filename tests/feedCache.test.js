@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadCachedGlobalEvents, loadGlobalEvents } from '../src/globalEvents.js'
-import { loadCachedGlobalNews } from '../src/globalNews.js'
+import { loadCachedGlobalNews, normalizeGlobalNewsItems } from '../src/globalNews.js'
 import { readJsonCache, writeJsonCache } from '../src/localCache.js'
 
 test('feed caches restore validated results and label them stale until refreshed', () => {
@@ -60,6 +60,19 @@ test('feed caches restore validated results and label them stale until refreshed
   } finally {
     globalThis.window = previousWindow
   }
+})
+
+test('global news normalizes only fresh articles from the selected publisher', () => {
+  const now = Date.now()
+  const articles = normalizeGlobalNewsItems([
+    { title: 'Current world report', description: 'A sample report', link: 'https://www.aljazeera.com/news/sample', pubDate: new Date(now - 60_000).toISOString() },
+    { title: 'Expired world report', description: 'An old report', link: 'https://www.aljazeera.com/news/old', pubDate: new Date(now - 49 * 60 * 60 * 1000).toISOString() },
+    { title: 'Untrusted link', description: 'Lookalike domain', link: 'https://www.aljazeera.com.fake.example/news/sample', pubDate: new Date(now - 60_000).toISOString() },
+  ], { now, textCleaner: (value) => value, sourceId: 'aljazeera' })
+  assert.equal(articles.length, 1)
+  assert.equal(articles[0].sourceId, 'aljazeera')
+  assert.equal(articles[0].sourceName, 'Al Jazeera English')
+  assert.equal(articles[0].title, 'Current world report')
 })
 
 test('expired global news cache entries are rejected', () => {
