@@ -15,7 +15,7 @@ test('feed caches restore validated results and label them stale until refreshed
   }
 
   try {
-    const checkedAt = 1700000000000
+    const checkedAt = Date.now() - 60_000
     writeJsonCache('sentinel-global-events-v1', {
       updatedAt: checkedAt,
       stale: false,
@@ -28,11 +28,13 @@ test('feed caches restore validated results and label them stale until refreshed
         place: 'Sample location',
       }],
     })
-    writeJsonCache('sentinel-global-news-v4', {
+    writeJsonCache('sentinel-global-news-v6', {
       updatedAt: checkedAt,
       stale: false,
       articles: [{
         id: 'https://www.bbc.co.uk/news/articles/example',
+        sourceId: 'bbc',
+        sourceName: 'BBC News',
         title: 'Sample headline',
         summary: 'Sample summary',
         url: 'https://www.bbc.co.uk/news/articles/example',
@@ -55,6 +57,33 @@ test('feed caches restore validated results and label them stale until refreshed
     } finally {
       console.warn = previousWarn
     }
+  } finally {
+    globalThis.window = previousWindow
+  }
+})
+
+test('expired global news cache entries are rejected', () => {
+  const values = new Map()
+  const previousWindow = globalThis.window
+  globalThis.window = { localStorage: {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  } }
+  try {
+    const now = Date.now()
+    writeJsonCache('sentinel-global-news-v6', {
+      updatedAt: now,
+      articles: [{
+        id: 'https://www.bbc.co.uk/news/articles/expired',
+        sourceId: 'bbc',
+        title: 'Expired headline',
+        summary: 'Old story',
+        url: 'https://www.bbc.co.uk/news/articles/expired',
+        publishedAt: now - 49 * 60 * 60 * 1000,
+        location: null,
+      }],
+    })
+    assert.equal(loadCachedGlobalNews(), null)
   } finally {
     globalThis.window = previousWindow
   }
