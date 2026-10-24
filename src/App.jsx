@@ -10,7 +10,7 @@ import {
   threatFeedInfo,
 } from './threatIntel.js'
 import { globalEventsInfo, loadCachedGlobalEvents, loadGlobalEvents } from './globalEvents.js'
-import { globalNewsInfo, loadCachedGlobalNews, loadGlobalNews } from './globalNews.js'
+import { DEFAULT_NEWS_SOURCE_IDS, globalNewsInfo, loadCachedGlobalNews, loadGlobalNews, newsSourceOptions } from './globalNews.js'
 import { cyberNewsInfo, loadCachedCyberNews, loadCyberNews } from './cyberNews.js'
 import { filterIndicators } from './indicatorFilters.js'
 import { loadCachedVulnerabilities, loadVulnerabilities, vulnerabilityIntelInfo } from './vulnerabilityIntel.js'
@@ -751,6 +751,12 @@ function App() {
   const [newsStale, setNewsStale] = useState(cachedNews?.stale ?? false)
   const [newsError, setNewsError] = useState('')
   const [newsLoading, setNewsLoading] = useState(false)
+  const [newsSources, setNewsSources] = useState(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('cyber-threat-map-news-sources') || 'null')
+      return Array.isArray(saved) ? saved.filter((id) => DEFAULT_NEWS_SOURCE_IDS.includes(id)) : DEFAULT_NEWS_SOURCE_IDS
+    } catch { return DEFAULT_NEWS_SOURCE_IDS }
+  })
   const [showNews, setShowNews] = useState(true)
   const [selectedNewsId, setSelectedNewsId] = useState(null)
   const [mapView, setMapView] = useState('2d')
@@ -880,12 +886,18 @@ function App() {
     }
   }, [])
 
+  const updateNewsSources = (sourceId, checked) => {
+    const next = checked ? [...new Set([...newsSources, sourceId])] : newsSources.filter((id) => id !== sourceId)
+    setNewsSources(next)
+    try { window.localStorage.setItem('cyber-threat-map-news-sources', JSON.stringify(next)) } catch { /* preference storage is optional */ }
+  }
+
   const refreshNews = useCallback(async () => {
     if (newsLoadingRef.current) return
     newsLoadingRef.current = true
     setNewsLoading(true)
     try {
-      const result = await loadGlobalNews()
+      const result = await loadGlobalNews({ sourceIds: newsSources })
       setNewsArticles(result.articles)
       setNewsUpdatedAt(result.updatedAt)
       setNewsStale(false)
@@ -898,7 +910,7 @@ function App() {
       newsLoadingRef.current = false
       setNewsLoading(false)
     }
-  }, [])
+  }, [newsSources])
 
   const refreshCyberNews = useCallback(async () => {
     if (cyberNewsLoadingRef.current) return
@@ -1482,9 +1494,9 @@ function App() {
                     <h4>Other mapped headlines in {selectedMapCountry}</h4>
                     {relatedMapNews.length ? relatedMapNews.map((article) => (
                       <button key={article.id} type="button" onClick={() => selectNews(article)}>
-                        <span>{article.title}</span><small>{formatNewsTime(article.publishedAt)} UTC · BBC News</small>
+                        <span>{article.title}</span><small>{formatNewsTime(article.publishedAt)} UTC · {article.sourceName || 'News publisher'}</small>
                       </button>
-                    )) : <p>No other country-level BBC headlines currently match this location. This does not mean the region has no cyber activity.</p>}
+                    )) : <p>No other country-level news headlines currently match this location. This does not mean the region has no cyber activity.</p>}
                   </div>
                 )}
                 {selectedMapNews?.location?.precision === 'country' && (
@@ -1592,13 +1604,13 @@ function App() {
 
           <section className="events-panel news-panel" id="news-panel" aria-labelledby="news-title">
             <div className="panel-heading events-heading">
-              <div><h2 id="news-title">Major world news</h2><p>BBC World headlines · highlighted only when a location is identified in the story text</p></div>
+              <div><h2 id="news-title">Major world news</h2><p>Choose publishers below · headlines are highlighted only when a location is identified in the story text</p></div>
               <div className="events-heading-actions">
                 <span>{newsUpdatedAt ? `${newsStale ? 'Cached' : 'Checked'} ${formatNewsTime(newsUpdatedAt)} UTC` : newsLoading ? 'Loading headlines…' : 'Feed unavailable'}</span>
                 <button onClick={refreshNews} disabled={newsLoading}>{newsLoading ? 'Checking…' : 'Refresh news'}</button>
               </div>
             </div>
-            {newsError && <div className="events-error" role="alert">Could not refresh BBC World news: {newsError}{newsArticles.length > 0 && ' Showing the last successful results.'}</div>}
+            {newsError && <div className="events-error" role="alert">Could not refresh selected world news: {newsError}{newsArticles.length > 0 && ' Showing the last successful results.'}</div>}
             <p className="news-location-note">Map areas are approximate matches against locations explicitly mentioned in each headline or summary; they do not show verified event boundaries. Some headlines may not have a mappable location.</p>
             <div className="news-list">
               {newsArticles.length ? newsArticles.slice(0, 8).map((article) => (
@@ -1611,11 +1623,11 @@ function App() {
                       <small>{formatNewsTime(article.publishedAt)} UTC</small>
                     </span>
                   </button>
-                  <a href={article.url} target="_blank" rel="noreferrer">BBC ↗</a>
+                  <a href={article.url} target="_blank" rel="noreferrer">{article.sourceName || 'Publisher'} ↗</a>
                 </article>
-              )) : <div className="events-empty">{newsLoading ? 'Loading headlines from BBC World…' : newsError ? 'World news could not be loaded. Retry to check the feed.' : 'No recent world headlines are available.'}</div>}
+              )) : <div className="events-empty">{newsLoading ? 'Loading headlines from selected sources…' : newsError ? 'World news could not be loaded. Retry to check the feed.' : 'No recent world headlines are available.'}</div>}
             </div>
-            <div className="news-source"><span>Source: <a href={globalNewsInfo.source} target="_blank" rel="noreferrer">BBC News World</a> · Updated every 15 minutes</span><span>Headlines are independently reported news, not threat intelligence.</span></div>
+            <div className="news-source-preferences" aria-label="News source preferences"><strong>News sources</strong><span>Choose one or more publishers. Preferences are saved only in this browser.</span><div>{newsSourceOptions.map((source) => <label key={source.id}><input type="checkbox" checked={newsSources.includes(source.id)} onChange={(event) => updateNewsSources(source.id, event.target.checked)} />{source.name}</label>)}</div><small>Maximum article age: 48 hours · Coverage: worldwide · A source can be unavailable or restrict automated access. Failed sources are skipped when another selected source works.</small></div><div className="news-source"><span>Selected sources: {newsSources.length ? newsSourceOptions.filter((source) => newsSources.includes(source.id)).map((source) => source.name).join(', ') : 'None selected'} · refreshed every {globalNewsInfo.refreshMinutes} minutes</span><span>Headlines are independently reported news, not threat intelligence. Feed requests may pass through public RSS converters/proxies.</span></div>
           </section>
 
           <section className="events-panel cyber-advisory-panel" id="cyber-advisories" aria-labelledby="cyber-advisories-title">
