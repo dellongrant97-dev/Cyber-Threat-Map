@@ -6,7 +6,7 @@ export const newsSourceOptions = [
   { id: 'ap', name: 'Associated Press', feed: 'https://apnews.com/hub/world-news?output=rss', hosts: ['apnews.com', 'www.apnews.com'] },
   { id: 'dw', name: 'Deutsche Welle (DW)', feed: 'https://rss.dw.com/rdf/rss-en-all', hosts: ['www.dw.com', 'dw.com'] },
   { id: 'guardian', name: 'The Guardian', feed: 'https://www.theguardian.com/world/rss', hosts: ['www.theguardian.com'] },
-  { id: 'bbc', name: 'BBC News', feed: 'https://feeds.bbci.co.uk/news/world/rss.xml', hosts: ['www.bbc.co.uk', 'www.bbc.com'] },
+  { id: 'bbc', name: 'BBC News', feed: 'https://feeds.bbci.co.uk/news/world/rss.xml', hosts: ['www.bbc.co.uk', 'www.bbc.com'], imageHosts: ['ichef.bbci.co.uk', 'bbci.co.uk', 'www.bbc.co.uk', 'www.bbc.com'] },
 ]
 export const DEFAULT_NEWS_SOURCE_IDS = newsSourceOptions.map((source) => source.id)
 const sourceById = new Map(newsSourceOptions.map((source) => [source.id, source]))
@@ -107,7 +107,8 @@ function getSafeImageUrl(value, sourceId) {
   try {
     const url = new URL(value)
     const source = sourceById.get(sourceId)
-    if (!source || url.protocol !== 'https:' || !source.hosts.includes(url.hostname.toLowerCase()) || url.pathname === '/' || url.username || url.password) return ''
+    const allowedImageHosts = source?.imageHosts || source?.hosts || []
+    if (!source || url.protocol !== 'https:' || !allowedImageHosts.includes(url.hostname.toLowerCase()) || url.pathname === '/' || url.username || url.password) return ''
     return url.href
   } catch {
     return ''
@@ -252,13 +253,14 @@ async function fetchWithTimeout(fetchImpl, url, { responseType = 'json', timeout
   }
 }
 
-export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlParser, textCleaner = cleanText, sourceIds = DEFAULT_NEWS_SOURCE_IDS } = {}) {
+export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlParser, textCleaner = cleanText, sourceIds = ['bbc'] } = {}) {
   const selectedSources = [...new Set(sourceIds)].filter((id) => sourceById.has(id))
   if (!selectedSources.length) throw new Error('Select at least one news source to refresh world news.')
 
   const articles = []
   const errors = []
   const successfulSources = []
+  const successfulSourceLabels = []
   const sourceErrors = []
   for (const sourceId of selectedSources) {
     const source = sourceById.get(sourceId)
@@ -269,15 +271,15 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
         if (feed?.status !== 'ok' || !Array.isArray(feed?.items)) {
           throw new Error(feed?.message || 'RSS-to-JSON converter returned invalid data.')
         }
-        return { items: feed.items }
+        return { items: feed.items, sourceLabel: sourceId === 'bbc' ? (feed.feed?.title || 'BBC News (RSS-to-JSON)') : source.name }
       },
       async () => {
         const xml = await fetchWithTimeout(fetchImpl, `${RSS_PROXY}${encodeURIComponent(source.feed)}&refresh=${now}`, { responseType: 'text' })
-        return { items: parseRssXml(xml, xmlParser) }
+        return { items: parseRssXml(xml, xmlParser), sourceLabel: sourceId === 'bbc' ? 'BBC News World (AllOrigins RSS fallback)' : `${source.name} (AllOrigins RSS fallback)` }
       },
       async () => {
         const xml = await fetchWithTimeout(fetchImpl, `https://proxy.cors.dev/${source.feed}?refresh=${now}`, { responseType: 'text' })
-        return { items: parseRssXml(xml, xmlParser) }
+        return { items: parseRssXml(xml, xmlParser), sourceLabel: sourceId === 'bbc' ? 'BBC News World (CORS proxy fallback)' : `${source.name} (CORS proxy fallback)` }
       },
     ]
     let loaded = false
@@ -289,6 +291,7 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
         if (!normalized.length) throw new Error('No recent, valid headlines were returned.')
         articles.push(...normalized)
         successfulSources.push(sourceId)
+        successfulSourceLabels.push(feed.sourceLabel || source.name)
         loaded = true
         break
       } catch (error) {
@@ -306,7 +309,7 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
   if (!uniqueArticles.length) {
     throw new Error(`No selected news source could provide recent headlines. ${errors.join(' ')}`)
   }
-  const result = { articles: uniqueArticles, updatedAt: now, successfulSources, sourceErrors, sourceIds: selectedSources, stale: false }
+  const result = { articles: uniqueArticles, updatedAt: now, source: successfulSourceLabels[0], successfulSources, sourceErrors, sourceIds: selectedSources, stale: false }
   writeJsonCache(CACHE_KEY, result)
   return result
 }
