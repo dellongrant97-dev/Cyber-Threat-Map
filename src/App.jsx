@@ -750,6 +750,7 @@ function App() {
   const [newsUpdatedAt, setNewsUpdatedAt] = useState(cachedNews?.updatedAt ?? null)
   const [newsStale, setNewsStale] = useState(cachedNews?.stale ?? false)
   const [newsError, setNewsError] = useState('')
+  const [newsSourceWarnings, setNewsSourceWarnings] = useState([])
   const [newsLoading, setNewsLoading] = useState(false)
   const [newsSources, setNewsSources] = useState(() => {
     try {
@@ -888,7 +889,9 @@ function App() {
 
   const updateNewsSources = (sourceId, checked) => {
     const next = checked ? [...new Set([...newsSources, sourceId])] : newsSources.filter((id) => id !== sourceId)
+    if (!next.length) return
     setNewsSources(next)
+    setNewsArticles((current) => current.filter((article) => next.includes(article.sourceId || 'bbc'))
     try { window.localStorage.setItem('cyber-threat-map-news-sources', JSON.stringify(next)) } catch { /* preference storage is optional */ }
   }
 
@@ -902,6 +905,7 @@ function App() {
       setNewsUpdatedAt(result.updatedAt)
       setNewsStale(false)
       setNewsError('')
+      setNewsSourceWarnings(result.sourceErrors || [])
     } catch (error) {
       logClientError('news_refresh_failed', error)
       setNewsError(error instanceof Error ? error.message : 'Could not refresh global news.')
@@ -1550,7 +1554,7 @@ function App() {
             </div>
             <div className="perspective-stat-row">
               <div><span>IP INDICATORS</span><strong>{formatNumber(feed?.indicators.length ?? 0)}</strong><small>{feed?.stale ? 'Cached feed' : 'IPsum public lists'}</small></div>
-              <div><span>MAPPED NEWS</span><strong>{formatNumber(newsArticles.filter((article) => article.location).length)}</strong><small>{newsStale ? 'Cached headlines' : 'BBC World'}</small></div>
+              <div><span>MAPPED NEWS</span><strong>{formatNumber(newsArticles.filter((article) => article.location).length)}</strong><small>{newsStale ? 'Cached headlines' : 'Selected publishers'}</small></div>
               <div><span>NATURAL EVENTS</span><strong>{formatNumber(globalEvents.length)}</strong><small>{eventsStale ? 'Cached USGS feed' : 'USGS past-day feed'}</small></div>
             </div>
             <div className="perspective-content-grid">
@@ -1611,6 +1615,7 @@ function App() {
               </div>
             </div>
             {newsError && <div className="events-error" role="alert">Could not refresh selected world news: {newsError}{newsArticles.length > 0 && ' Showing the last successful results.'}</div>}
+            {newsSourceWarnings.length > 0 && <div className="events-error" role="status">Some selected publishers could not be refreshed: {newsSourceWarnings.join(' · ')}. Headlines from other working sources are still shown.</div>}
             <p className="news-location-note">Map areas are approximate matches against locations explicitly mentioned in each headline or summary; they do not show verified event boundaries. Some headlines may not have a mappable location.</p>
             <div className="news-list">
               {newsArticles.length ? newsArticles.slice(0, 8).map((article) => (
