@@ -15,7 +15,7 @@ const RSS_PROXY = 'https://api.allorigins.win/raw?url='
 const NEWS_REFRESH_MINUTES = 15
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000
 const MAX_NEWS_ITEMS = 30
-const CACHE_KEY = 'sentinel-global-news-v6'
+const CACHE_KEY = 'sentinel-global-news-v7'
 
 const headlineLocations = [
   { name: 'New York City, United States', latitude: 40.7128, longitude: -74.006, precision: 'city', terms: ['New York City', "New York City's", 'New York', 'NYC', 'Bronx', 'Marble Hill'] },
@@ -200,7 +200,7 @@ export function normalizeGlobalNewsItems(items, { now = Date.now(), textCleaner 
     const titleLocation = findHeadlineLocation(title)
     const location = titleLocation || findHeadlineLocation(summary)
     return [{
-      id: link,
+      id: `${sourceId}:${link}`,
       title,
       summary,
       imageUrls: getNewsImageUrls(item, sourceId),
@@ -316,7 +316,7 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
 
   const uniqueArticles = [...new Map(articles
     .sort((first, second) => second.publishedAt - first.publishedAt)
-    .map((article) => [article.url, article])).values()].slice(0, MAX_NEWS_ITEMS)
+    .map((article) => [`${article.sourceId}:${article.url}`, article])).values()].slice(0, MAX_NEWS_ITEMS)
   if (!uniqueArticles.length) {
     throw new Error(`No selected news source could provide recent headlines. ${errors.join(' ')}`)
   }
