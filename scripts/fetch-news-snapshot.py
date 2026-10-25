@@ -43,10 +43,27 @@ def main():
                 link = text(item, "link")
                 description = text(item, "description")
                 pub_date = text(item, "pubDate")
+                # Preserve publisher-provided image metadata for the browser to validate.
+                media_thumbnail = item.find("{http://search.yahoo.com/mrss/}thumbnail")
+                media_content = item.find("{http://search.yahoo.com/mrss/}content")
+                enclosure = item.find("enclosure")
+                thumbnail = ""
+                for image_node in (media_thumbnail, media_content, enclosure):
+                    if image_node is not None:
+                        candidate = (image_node.get("url") or "").strip()
+                        if candidate:
+                            thumbnail = candidate
+                            break
                 if not title or not link or not pub_date:
                     continue
                 # The browser performs the final publisher-host and 48-hour validation.
-                items.append({"title": title, "link": link, "description": description, "pubDate": pub_date})
+                items.append({
+                    "title": title,
+                    "link": link,
+                    "description": description,
+                    "pubDate": pub_date,
+                    "thumbnail": thumbnail,
+                })
                 if len(items) >= MAX_ITEMS_PER_SOURCE:
                     break
             if items:
