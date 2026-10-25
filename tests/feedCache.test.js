@@ -28,7 +28,7 @@ test('feed caches restore validated results and label them stale until refreshed
         place: 'Sample location',
       }],
     })
-    writeJsonCache('sentinel-global-news-v6', {
+    writeJsonCache('sentinel-global-news-v7', {
       updatedAt: checkedAt,
       stale: false,
       articles: [{
@@ -84,7 +84,7 @@ test('expired global news cache entries are rejected', () => {
   } }
   try {
     const now = Date.now()
-    writeJsonCache('sentinel-global-news-v6', {
+    writeJsonCache('sentinel-global-news-v7', {
       updatedAt: now,
       articles: [{
         id: 'https://www.bbc.co.uk/news/articles/expired',
