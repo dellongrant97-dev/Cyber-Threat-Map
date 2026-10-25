@@ -266,6 +266,17 @@ export async function loadGlobalNews({ fetchImpl = fetch, now = Date.now(), xmlP
     const source = sourceById.get(sourceId)
     const attempts = [
       async () => {
+        const snapshotUrl = `${import.meta.env.BASE_URL}news-snapshot.json?refresh=${now}`
+        const snapshot = await fetchWithTimeout(fetchImpl, snapshotUrl)
+        const generatedAt = Date.parse(snapshot?.generatedAt || '')
+        if (!Number.isFinite(generatedAt) || generatedAt > now + 5 * 60 * 1000 || generatedAt < now - 2 * 60 * 60 * 1000) {
+          throw new Error('The scheduled news snapshot is missing or older than two hours.')
+        }
+        const items = snapshot?.feeds?.[sourceId]
+        if (!Array.isArray(items) || !items.length) throw new Error('No items for this publisher in the scheduled news snapshot.')
+        return { items, sourceLabel: `${source.name} (scheduled snapshot)` }
+      },
+      async () => {
         const url = `${RSS_CONVERTER}?rss_url=${encodeURIComponent(source.feed)}&refresh=${now}`
         const feed = await fetchWithTimeout(fetchImpl, url)
         if (feed?.status !== 'ok' || !Array.isArray(feed?.items)) {
